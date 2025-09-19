@@ -149,6 +149,21 @@ def add_validator_args(cls, parser):
         help="How often to challenge miners (steps)",
         default=5,
     )
+    
+    # Level114 scoring system arguments
+    validator_group.add_argument(
+        "--validator.weight_update_interval",
+        type=int,
+        help="Interval in seconds between weight updates (default: 300 = 5 minutes)",
+        default=300,
+    )
+    
+    validator_group.add_argument(
+        "--validator.validation_interval", 
+        type=int,
+        help="Interval in seconds between validation cycles (default: 30)",
+        default=30,
+    )
 
 
 def config(cls):

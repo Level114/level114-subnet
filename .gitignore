@@ -232,6 +232,8 @@ datasets/
 *.pickle
 
 # Secrets and configuration
+collector/
+credentials/
 secrets/
 .secrets
 *.key
@@ -242,3 +244,4 @@ secrets/
 config.env
 .env.local
 .env.*.local
+test_validator_weights.py

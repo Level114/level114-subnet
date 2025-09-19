@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Level114 Subnet Minecraft Server Registration Script (Interactive Mode)
+# Level114 Subnet Miner Registration Script
 # 
-# This script interactively asks for Minecraft server details and registers it 
-# with collector-center-main service, then exits.
+# This script registers your Minecraft server with the Level114 subnet
+# by connecting to the collector-center-main service. The miner will register
+# your server and make it available for validator evaluation.
 
 set -e
 
@@ -18,10 +19,10 @@ INTERACTIVE_MODE=true
 
 # Check for help or show usage
 if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
-    echo "🎮 Level114 Minecraft Server Registration (Interactive Mode)"
+    echo "🎮 Level114 Subnet Miner Registration"
     echo ""
-    echo "This tool will interactively ask for your Minecraft server details"
-    echo "and register it with collector-center-main, then exit."
+    echo "This tool registers your Minecraft server with the Level114 subnet"
+    echo "by connecting to the collector-center-main service."
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
@@ -82,9 +83,10 @@ done
 
 # Interactive mode - ask user for input
 if [[ "$INTERACTIVE_MODE" == "true" ]]; then
-    echo "🎮 Level114 Minecraft Server Registration - Interactive Mode"
+    echo "🎮 Level114 Subnet Miner Registration - Interactive Mode"
     echo ""
-    echo "I will register your Minecraft server with collector-center-main"
+    echo "I will register your Minecraft server with the Level114 subnet"
+    echo "through the collector-center-main service."
     echo ""
     
     # Get collector information
@@ -140,13 +142,23 @@ fi
 # Build collector URL
 COLLECTOR_URL="http://${COLLECTOR_IP}:${COLLECTOR_PORT}"
 
-# Check if the script is run from the correct directory
-if [[ ! -f "neurons/miner.py" ]]; then
-    echo "❌ Error: This script must be run from the level114 subnet root directory"
-    echo "Current directory: $(pwd)"
-    echo "Expected files: neurons/miner.py"
+# Resolve project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Check if we can find the project structure
+if [[ ! -f "${PROJECT_ROOT}/neurons/miner.py" ]]; then
+    echo "❌ Error: Cannot find Level114 subnet project structure"
+    echo "Script location: $SCRIPT_DIR"  
+    echo "Project root: $PROJECT_ROOT"
+    echo "Expected file: ${PROJECT_ROOT}/neurons/miner.py"
+    echo ""
+    echo "Please ensure this script is in the scripts/ directory of the Level114 subnet project."
     exit 1
 fi
+
+# Change to project root for execution
+cd "$PROJECT_ROOT"
 
 # Check for Python command
 PYTHON_CMD=""
@@ -172,23 +184,29 @@ if [[ -z "${VIRTUAL_ENV}" ]]; then
     fi
 fi
 
-echo "🎮 Registering Minecraft Server with Level114..."
+echo "🎮 Registering Minecraft Server with Level114 Subnet..."
 echo ""
 echo "📋 Configuration:"
 echo "  - Bittensor Wallet: $WALLET_NAME.$WALLET_HOTKEY"
 echo "  - Collector-Center: $COLLECTOR_URL"
 echo "  - Minecraft Server: $MINECRAFT_IP:$MINECRAFT_PORT"
 echo ""
-echo "🔄 What the script will do:"
-echo "  1. Register your Minecraft server with collector-center-main"
-echo "  2. Exit after successful registration"
-echo "  3. No background processes or validator serving!"
+echo "🔄 What the registration will do:"
+echo "  1. Connect your Minecraft server to the Level114 subnet"
+echo "  2. Register server details with collector-center-main"
+echo "  3. Make your server available for validator evaluation"
+echo "  4. Enable earning TAO rewards based on server performance"
+echo ""
+echo "📊 Your server will be scored on:"
+echo "  • Infrastructure (40%): TPS performance, latency, memory usage"
+echo "  • Participation (35%): Plugin compliance, player activity"  
+echo "  • Reliability (25%): Uptime stability, consistency"
 echo ""
 echo "================================================================"
 echo ""
 
-# Set Python path to include current directory
-export PYTHONPATH="${PWD}:${PYTHONPATH}"
+# Set Python path to include project root
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
 # Build minecraft arguments - always pass the IP since it's required now
 MINECRAFT_ARGS="--minecraft_ip $MINECRAFT_IP"

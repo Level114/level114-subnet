@@ -3,7 +3,7 @@ Collector Center API client
 """
 
 from typing import Optional, Dict, List, Tuple, Any
-from level114.types import ValidatorServer, ServerReport, ReportPayload, SystemInfo, MemoryInfo
+from level114.types import ValidatorServer
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
@@ -95,78 +95,48 @@ class CollectorCenterAPI:
 
     
 
-    def get_server_reports(self, server_id: str, limit: Optional[int] = None, timeout_seconds: Optional[float] = None) -> Tuple[int, List[ServerReport]]:
+    def get_server_reports(self, server_id: str, limit: Optional[int] = None, timeout_seconds: Optional[float] = None) -> Tuple[int, List[Dict[str, Any]]]:
+        """
+        Get server reports as raw dictionaries
+        
+        Args:
+            server_id: Server ID to get reports for
+            limit: Maximum number of reports to fetch
+            timeout_seconds: Request timeout
+            
+        Returns:
+            Tuple of (status_code, list_of_report_dicts)
+        """
         if not server_id:
             return 400, []
+        
         effective_limit = int(limit) if limit is not None else self.reports_limit_default
         query = urlencode({"limit": effective_limit})
         url = f"{self.base_url}/validators/servers/{server_id}/reports?{query}"
         req = Request(url, headers=self.default_headers(), method="GET")
         timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+        
         try:
             with urlopen(req, timeout=timeout) as resp:
                 status = resp.getcode()
                 body = resp.read().decode("utf-8", errors="ignore")
+                
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError:
                     if status < 200 or status >= 300:
                         bt.logging.error(f"collector reports status={status} server_id={server_id} body={body}")
                     return status, []
+                
+                # Return raw report dictionaries - let the scoring system handle parsing
                 items_raw = data.get("items", []) if isinstance(data, dict) else []
-                items: List[ServerReport] = []
-                for item in items_raw:
-                    if not isinstance(item, dict):
-                        continue
-                    payload = item.get("payload") if isinstance(item.get("payload"), dict) else None
-                    mem_payload = payload.get("memory_ram_info") if payload else None
-                    sysinfo = payload.get("system_info") if payload and isinstance(payload.get("system_info"), dict) else None
-                    sys_mem = sysinfo.get("memory_ram_info") if sysinfo else None
-
-                    memory_payload = MemoryInfo(**mem_payload) if isinstance(mem_payload, dict) else None
-                    system_memory = MemoryInfo(**sys_mem) if isinstance(sys_mem, dict) else None
-                    system_info = SystemInfo(
-                        cpu_cores=sysinfo.get("cpu_cores") if sysinfo else None,
-                        cpu_model=sysinfo.get("cpu_model") if sysinfo else None,
-                        cpu_threads=sysinfo.get("cpu_threads") if sysinfo else None,
-                        java_version=sysinfo.get("java_version") if sysinfo else None,
-                        memory_ram_info=system_memory,
-                        os_arch=sysinfo.get("os_arch") if sysinfo else None,
-                        os_name=sysinfo.get("os_name") if sysinfo else None,
-                        os_version=sysinfo.get("os_version") if sysinfo else None,
-                        uptime_ms=sysinfo.get("uptime_ms") if sysinfo else None,
-                    ) if sysinfo else None
-                    report_payload = ReportPayload(
-                        active_players=payload.get("active_players") if payload else None,
-                        max_players=payload.get("max_players") if payload else None,
-                        memory_ram_info=memory_payload,
-                        plugins=payload.get("plugins") if payload else None,
-                        system_info=system_info,
-                        tps_millis=payload.get("tps_millis") if payload else None,
-                        uptime_ms=payload.get("uptime_ms") if payload else None,
-                    ) if payload else None
-
-                    try:
-                        items.append(
-                            ServerReport(
-                                id=str(item.get("id", "")),
-                                server_id=str(item.get("server_id", "")),
-                                counter=int(item.get("counter", 0)),
-                                client_timestamp_ms=int(item.get("client_timestamp_ms", 0)),
-                                nonce=str(item.get("nonce", "")),
-                                plugin_hash=str(item.get("plugin_hash", "")),
-                                payload_hash=str(item.get("payload_hash", "")),
-                                payload=report_payload,
-                                signature=str(item.get("signature", "")),
-                                created_at=str(item.get("created_at", "")),
-                            )
-                        )
-                    except Exception:
-                        continue
-
+                items = [item for item in items_raw if isinstance(item, dict)]
+                
                 if status < 200 or status >= 300:
                     bt.logging.error(f"collector reports status={status} server_id={server_id} body={body}")
+                
                 return status, items
+                
         except Exception as e:
             bt.logging.error(f"collector reports error server_id={server_id}: {e}")
             return 599, []

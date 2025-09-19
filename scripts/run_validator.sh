@@ -16,10 +16,12 @@ WALLET_NAME=default
 WALLET_HOTKEY=default
 SAMPLE_SIZE=10
 LOG_LEVEL=INFO
-COLLECTOR_URL=""
+COLLECTOR_URL="http://collector.level114.io:3000"
 COLLECTOR_TIMEOUT=10.0
 COLLECTOR_API_KEY=""
 COLLECTOR_REPORTS_LIMIT=25
+WEIGHT_UPDATE_INTERVAL=300
+VALIDATION_INTERVAL=30
 
 # Collect extra/unknown args to forward to Python
 EXTRA_ARGS=()
@@ -37,6 +39,8 @@ while [[ $# -gt 0 ]]; do
     --collector.timeout) COLLECTOR_TIMEOUT="$2"; shift 2;;
     --collector.api_key) COLLECTOR_API_KEY="$2"; shift 2;;
     --collector.reports_limit) COLLECTOR_REPORTS_LIMIT="$2"; shift 2;;
+    --validator.weight_update_interval) WEIGHT_UPDATE_INTERVAL="$2"; shift 2;;
+    --validator.validation_interval) VALIDATION_INTERVAL="$2"; shift 2;;
     -h|--help)
       echo "Level114 Subnet Validator Runner"
       echo
@@ -52,6 +56,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --collector.timeout SECONDS       Collector timeout (default: 10.0)"
       echo "  --collector.api_key KEY           Collector API key (required)"
       echo "  --collector.reports_limit N       Default reports limit (default: 25)"
+      echo "  --validator.weight_update_interval SEC  Weight update interval (default: 300)"
+      echo "  --validator.validation_interval SEC     Validation cycle interval (default: 30)"
       echo "  --log_level LEVEL                 Log level (default: INFO)"
       echo "  -h, --help                        Show this help"
       exit 0
@@ -125,6 +131,10 @@ if [[ -n "$COLLECTOR_URL" ]]; then CMD+=(--collector.url "$COLLECTOR_URL"); fi
 if [[ -n "$COLLECTOR_TIMEOUT" ]]; then CMD+=(--collector.timeout "$COLLECTOR_TIMEOUT"); fi
 if [[ -n "$COLLECTOR_API_KEY" ]]; then CMD+=(--collector.api_key "$COLLECTOR_API_KEY"); fi
 if [[ -n "$COLLECTOR_REPORTS_LIMIT" ]]; then CMD+=(--collector.reports_limit "$COLLECTOR_REPORTS_LIMIT"); fi
+
+# Append validator scoring flags
+if [[ -n "$WEIGHT_UPDATE_INTERVAL" ]]; then CMD+=(--validator.weight_update_interval "$WEIGHT_UPDATE_INTERVAL"); fi
+if [[ -n "$VALIDATION_INTERVAL" ]]; then CMD+=(--validator.validation_interval "$VALIDATION_INTERVAL"); fi
 
 # Forward extra args (logging, bittensor flags, etc.)
 CMD+=("${EXTRA_ARGS[@]}")
