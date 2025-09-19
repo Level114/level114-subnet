@@ -106,17 +106,27 @@ VENV_PIP="$VENV_DIR/bin/pip"
 "$VENV_PY" -V >/dev/null 2>&1 || { echo "❌ Failed to initialize venv"; exit 1; }
 
 # Upgrade pip and install deps
-"$VENV_PY" -m pip install --upgrade pip wheel setuptools >/dev/null
+echo "Setting up Python environment..."
+"$VENV_PY" -m pip install --upgrade pip wheel >/dev/null 2>&1
+
 if [[ -f "$PROJECT_ROOT/requirements.txt" ]]; then
-  echo "Installing requirements.txt"
-  "$VENV_PIP" install -r "$PROJECT_ROOT/requirements.txt"
+  echo "Installing requirements.txt..."
+  "$VENV_PIP" install -r "$PROJECT_ROOT/requirements.txt" --no-warn-script-location
 else
-  echo "Installing package in editable mode"
-  "$VENV_PIP" install -e "$PROJECT_ROOT"
+  echo "Installing package in editable mode..."
+  "$VENV_PIP" install -e "$PROJECT_ROOT" --no-warn-script-location
 fi
 
 export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
+
+echo "🚀 Starting Level114 Validator..."
+echo "   Network: $NETWORK (netuid: $NETUID)"
+echo "   Wallet: $WALLET_NAME/$WALLET_HOTKEY"
+echo "   Collector: $COLLECTOR_URL"
+echo "   Validation interval: ${VALIDATION_INTERVAL}s"
+echo "   Weight update interval: ${WEIGHT_UPDATE_INTERVAL}s"
+echo ""
 
 CMD=("$VENV_PY" -u "$PROJECT_ROOT/neurons/validator.py"
   --netuid "$NETUID"
@@ -124,6 +134,7 @@ CMD=("$VENV_PY" -u "$PROJECT_ROOT/neurons/validator.py"
   --wallet.name "$WALLET_NAME"
   --wallet.hotkey "$WALLET_HOTKEY"
   --neuron.sample_size "$SAMPLE_SIZE"
+  --logging.info
 )
 
 # Append collector flags if provided
