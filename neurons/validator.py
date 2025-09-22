@@ -76,10 +76,25 @@ class Validator(BaseValidatorNeuron):
         5. Persists scoring history and analytics
         """
         try:
+            # Check if enough time has passed since last validation
+            validation_interval = getattr(self.config.validator, 'validation_interval', 30)
+            current_time = time.time()
+            
+            if not hasattr(self, 'last_validation_time'):
+                self.last_validation_time = 0
+            
+            if current_time - self.last_validation_time < validation_interval:
+                # Not time for validation yet, just wait
+                await asyncio.sleep(1)
+                return
+            
             bt.logging.info("🔄 Starting Level114 validation cycle...")
             
             # Run comprehensive scoring cycle
             cycle_stats = await self.scoring_runner.run_scoring_cycle()
+            
+            # Update last validation time
+            self.last_validation_time = current_time
             
             # Log detailed results
             bt.logging.info(
@@ -102,12 +117,16 @@ class Validator(BaseValidatorNeuron):
             
         except Exception as e:
             bt.logging.error(f"❌ Error in validation cycle: {e}")
+            bt.logging.error(f"❌ Error details: {type(e).__name__}: {str(e)}")
+            
             # Fall back to basic validation to avoid complete failure
-            await self._basic_fallback_validation()
-        
-        # Brief pause between validation cycles
-        validation_interval = getattr(self.config.validator, 'validation_interval', 30)
-        await asyncio.sleep(validation_interval)
+            try:
+                bt.logging.warning("🔧 Attempting fallback validation...")
+                await self._basic_fallback_validation()
+            except Exception as fallback_error:
+                bt.logging.error(f"❌ Fallback validation also failed: {fallback_error}")
+                # Wait a bit longer if both systems fail
+                await asyncio.sleep(30)
     
     def _update_legacy_scores(self):
         """

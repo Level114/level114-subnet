@@ -160,7 +160,9 @@ def process_weights_for_netuid(
         metagraph = subtensor.metagraph(netuid)
 
     # Cast weights to floats.
-    if not isinstance(weights, np.ndarray) or weights.dtype != np.float32:
+    if not isinstance(weights, np.ndarray):
+        weights = np.array(weights, dtype=np.float32)
+    elif weights.dtype != np.float32:
         weights = weights.astype(np.float32)
 
     # Network configuration parameters from an subtensor.

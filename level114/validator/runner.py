@@ -341,7 +341,7 @@ class Level114ValidatorRunner:
             )
             
             # 5. Set weights on blockchain
-            if processed_weights:
+            if len(processed_weights) > 0 and np.sum(processed_weights) > 0:
                 result = self.subtensor.set_weights(
                     wallet=self.wallet,
                     netuid=self.config.netuid,
