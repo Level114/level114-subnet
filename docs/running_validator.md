@@ -86,7 +86,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 - Memory Headroom: `free_memory / total_memory`
 
 **Participation (35% weight):**
-- Plugin Compliance: Required plugins present (Level114, SpecsPlugin)
+- Plugin Compliance: Required plugins present (Level114)
 - Player Activity: `active_players / 200` (capped at 200 players)
 - Registration Status: Server properly registered with validator
 
@@ -231,7 +231,7 @@ The validator uses these constants (from `level114/validator/scoring/constants.p
 IDEAL_TPS = 20.0          # Target TPS for perfect score
 MAX_LATENCY_S = 1.0       # Maximum acceptable latency
 MAX_PLAYERS_WEIGHT = 200  # Player count cap for scoring
-REQUIRED_PLUGINS = {"Level114", "SpecsPlugin"}
+REQUIRED_PLUGINS = {"Level114"}
 ```
 
 ### Performance Tuning

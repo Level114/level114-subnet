@@ -46,7 +46,7 @@ Measures server engagement and compliance with subnet requirements.
 - **Registration (15%)** - Proper validator registration status
 
 **Requirements:**
-- **Required Plugins:** Level114, SpecsPlugin
+- **Required Plugins:** Level114
 - **Optimal Players:** 20-80% of max capacity
 - **Max Player Weight:** 200 (anti-whale protection)
 
@@ -121,7 +121,7 @@ def calculate_score(miner_context):
       "total_memory_bytes": 8000000000,
       "used_memory_bytes": 4000000000
     },
-    "plugins": ["Level114", "SpecsPlugin", "..."],
+    "plugins": ["Level114", "..."],
     "system_info": {
       "cpu_cores": 20,
       "uptime_ms": 3600000,
@@ -191,8 +191,7 @@ LEVEL114_DEBUG_SCORING=false
 
 ```python
 REQUIRED_PLUGINS = {
-    "Level114",      # Subnet integration
-    "SpecsPlugin"    # Performance monitoring
+    "Level114"      # Subnet integration
 }
 
 BONUS_PLUGINS = {
@@ -294,7 +293,6 @@ print(f"Reliability: {components['reliability']:.3f}")
    ```bash
    # Required for subnet compliance
    /plugins install Level114
-   /plugins install SpecsPlugin
    ```
 
 2. **Low Player Activity:**

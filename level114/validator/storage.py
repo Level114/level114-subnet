@@ -365,7 +365,7 @@ class ValidatorStorage:
                 print(f"Error getting hotkey: {e}")
             return None
     
-    def get_hotkey_server(self, hotkey: str) -> Optional[str]:
+    def get_hotkey_server(self, hotkey: str, active_only: bool = True) -> Optional[str]:
         """
         Get server ID for a hotkey
         
@@ -376,19 +376,44 @@ class ValidatorStorage:
             Server ID string or None
         """
         try:
+            query = """
+                SELECT server_id FROM server_registry
+                WHERE hotkey = ?
+            """
+            params = [hotkey]
+
+            if active_only:
+                query += " AND status = 'active'"
+
             with self._get_connection() as conn:
-                cursor = conn.execute("""
-                    SELECT server_id FROM server_registry
-                    WHERE hotkey = ?
-                """, (hotkey,))
-                
+                cursor = conn.execute(query, params)
+
                 row = cursor.fetchone()
                 return row['server_id'] if row else None
-                
+
         except Exception as e:
             if DEBUG_SCORING:
                 print(f"Error getting server ID: {e}")
             return None
+
+    def deactivate_server(self, server_id: str, status: str = 'inactive') -> None:
+        """Mark a server as inactive/missing in the registry"""
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    UPDATE server_registry
+                    SET status = ?, last_seen = last_seen
+                    WHERE server_id = ?
+                """, (status, server_id))
+
+                conn.commit()
+
+                if DEBUG_SCORING:
+                    print(f"Deactivated server {server_id} with status {status}")
+
+        except Exception as e:
+            if DEBUG_SCORING:
+                print(f"Error deactivating server: {e}")
     
     def is_server_registered(self, server_id: str) -> bool:
         """

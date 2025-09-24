@@ -297,7 +297,7 @@ class ScorePreview:
         
         if components['participation'] < 0.7:
             if not ctx.report.payload.has_required_plugins:
-                suggestions.append("🔌 Install required plugins: Level114, SpecsPlugin")
+                suggestions.append("🔌 Install required plugins: Level114")
             if ctx.report.payload.player_count == 0:
                 suggestions.append("👥 Attract players to increase activity score")
         

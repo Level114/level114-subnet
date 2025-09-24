@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field, validator
 from datetime import datetime
 import json
 
+from .constants import REQUIRED_PLUGINS
+
 
 class MemoryInfo(BaseModel):
     """Memory information from server reports"""
@@ -192,8 +194,15 @@ class Payload(BaseModel):
     @property
     def has_required_plugins(self) -> bool:
         """Check if required plugins are present"""
-        required = {'Level114', 'SpecsPlugin'}
-        plugin_set = {plugin.strip() for plugin in self.plugins}
+        if not REQUIRED_PLUGINS:
+            return True
+
+        plugin_set = {
+            plugin.strip().lower()
+            for plugin in self.plugins
+            if isinstance(plugin, str) and plugin.strip()
+        }
+        required = {plugin.strip().lower() for plugin in REQUIRED_PLUGINS if plugin}
         return required.issubset(plugin_set)
     
     @classmethod

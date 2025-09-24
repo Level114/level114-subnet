@@ -44,8 +44,7 @@ IDEAL_MEMORY_USAGE = 0.7            # Ideal memory usage target
 
 # Required plugins for compliance
 REQUIRED_PLUGINS: Set[str] = {
-    "Level114",
-    "SpecsPlugin"
+    "Level114"
 }
 
 # Optional plugins that provide bonuses

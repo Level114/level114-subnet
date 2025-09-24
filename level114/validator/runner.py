@@ -59,6 +59,17 @@ class Level114ValidatorRunner:
         self.replay_protection = get_replay_protection()
         self.last_weights_update = 0
         self.score_cache = {}  # server_id -> (score, timestamp)
+        self.last_weight_update_attempt = 0
+        self.next_weight_update_time = 0
+        self._last_committed_weights = None
+        self._last_committed_uids = None
+        validator_cfg = getattr(self.config, 'validator', None)
+        default_retry = getattr(validator_cfg, 'weight_retry_interval', 60) if validator_cfg else 60
+        self.weight_retry_interval = max(default_retry, 10)
+        self.weight_update_interval = max(
+            getattr(validator_cfg, 'weight_update_interval', 300) if validator_cfg else 300,
+            10
+        )
         
         # Performance tracking
         self.cycle_count = 0
@@ -165,11 +176,14 @@ class Level114ValidatorRunner:
             # Try collector API first
             status, server_list = self.collector_api.get_validator_server_ids(hotkeys)
             
+            collector_hotkeys = set()
+
             if status == 200 and server_list:
                 for server_info in server_list:
                     hotkey = server_info.hotkey
                     server_id = server_info.id
                     mappings[hotkey] = server_id
+                    collector_hotkeys.add(hotkey)
                     
                     # Update local registry
                     self.storage.register_server(
@@ -178,12 +192,27 @@ class Level114ValidatorRunner:
                         int(time.time() * 1000)
                     )
             
-            # Fill gaps from local storage
-            for hotkey in hotkeys:
-                if hotkey not in mappings:
+            if status == 200:
+                # Mark hotkeys missing from collector as inactive locally
+                for hotkey in hotkeys:
+                    if hotkey in collector_hotkeys:
+                        continue
+
                     server_id = self.storage.get_hotkey_server(hotkey)
                     if server_id:
-                        mappings[hotkey] = server_id
+                        bt.logging.debug(
+                            f"Collector missing server mapping for hotkey {hotkey}, marking server {server_id} as missing"
+                        )
+                        self.storage.deactivate_server(server_id, status='missing')
+                        self.score_cache.pop(server_id, None)
+
+            else:
+                # Collector unavailable, fall back to cached mappings
+                for hotkey in hotkeys:
+                    if hotkey not in mappings:
+                        server_id = self.storage.get_hotkey_server(hotkey)
+                        if server_id:
+                            mappings[hotkey] = server_id
             
             bt.logging.info(f"Found {len(mappings)} server mappings")
             
@@ -292,10 +321,14 @@ class Level114ValidatorRunner:
     
     def _should_update_weights(self) -> bool:
         """Check if weights should be updated"""
-        # Get weight update interval from config (default 300s = 5 minutes)
-        weight_interval = getattr(self.config.validator, 'weight_update_interval', 300)
-        return time.time() - self.last_weights_update > weight_interval
-    
+        now = time.time()
+        if now < self.next_weight_update_time:
+            return False
+        if self.last_weights_update:
+            if now - self.last_weights_update < self.weight_update_interval:
+                return False
+        return True
+
     async def _update_weights(self, scoring_results: Dict[str, Dict]) -> None:
         """
         Update Bittensor weights based on scores
@@ -305,6 +338,7 @@ class Level114ValidatorRunner:
         """
         try:
             bt.logging.info("🏋️ Updating blockchain weights...")
+            self.last_weight_update_attempt = time.time()
             
             # 1. Prepare weights for all UIDs
             all_uids = list(range(self.metagraph.n.item()))
@@ -342,30 +376,55 @@ class Level114ValidatorRunner:
             
             # 5. Set weights on blockchain
             if len(processed_weights) > 0 and np.sum(processed_weights) > 0:
+                # Skip commit if nothing changed since last successful update
+                if (
+                    self._last_committed_uids is not None
+                    and np.array_equal(processed_uids, self._last_committed_uids)
+                    and np.allclose(processed_weights, self._last_committed_weights)
+                ):
+                    bt.logging.debug("Weights unchanged since last commit, skipping update")
+                    self.next_weight_update_time = self.last_weights_update + self.weight_update_interval if self.last_weights_update else time.time() + self.weight_update_interval
+                    return
+
                 result = self.subtensor.set_weights(
                     wallet=self.wallet,
                     netuid=self.config.netuid,
                     uids=processed_uids,
                     weights=processed_weights,
                     wait_for_inclusion=True,
-                    wait_for_finalization=False
+                    wait_for_finalization=True
                 )
                 
                 if result:
                     self.last_weights_update = time.time()
+                    self.next_weight_update_time = self.last_weights_update + self.weight_update_interval
+                    self._last_committed_uids = np.copy(processed_uids)
+                    self._last_committed_weights = np.copy(processed_weights)
                     bt.logging.info(
                         f"✅ Weights updated for {weights_assigned} miners "
                         f"(total weight: {sum(processed_weights):.3f})"
                     )
                 else:
                     bt.logging.error("❌ Failed to set weights on blockchain")
+                    self.next_weight_update_time = max(
+                        self.last_weight_update_attempt + self.weight_retry_interval,
+                        time.time() + self.weight_retry_interval
+                    )
             else:
                 bt.logging.warning("No weights to set")
+                self.next_weight_update_time = max(
+                    self.last_weight_update_attempt + self.weight_retry_interval,
+                    time.time() + self.weight_retry_interval
+                )
                 
         except Exception as e:
             bt.logging.error(f"Error updating weights: {e}")
+            self.next_weight_update_time = max(
+                self.last_weight_update_attempt + self.weight_retry_interval,
+                time.time() + self.weight_retry_interval
+            )
             raise
-    
+
     def _cleanup_old_data(self):
         """Clean up old data to prevent database bloat"""
         try:
@@ -396,12 +455,15 @@ class Level114ValidatorRunner:
         return {
             'cycle_count': self.cycle_count,
             'last_weights_update': self.last_weights_update,
+            'next_weight_update': self.next_weight_update_time,
+            'last_weight_attempt': self.last_weight_update_attempt,
             'cached_scores': len(self.score_cache),
             'storage_path': self.storage.db_path,
             'replay_protection_active': True,
             'config': {
                 'netuid': self.config.netuid,
-                'weight_update_interval': getattr(self.config.validator, 'weight_update_interval', 300)
+                'weight_update_interval': self.weight_update_interval,
+                'weight_retry_interval': self.weight_retry_interval
             }
         }
 

@@ -189,9 +189,14 @@ class Validator(BaseValidatorNeuron):
             
             # Weight timing
             weight_interval = status['config']['weight_update_interval'] 
-            next_update = status['last_weights_update'] + weight_interval if status['last_weights_update'] else time.time()
+            next_update = status.get('next_weight_update')
+            if not next_update:
+                next_update = status['last_weights_update'] + weight_interval if status['last_weights_update'] else time.time()
             time_to_next = max(0, next_update - time.time())
             bt.logging.info(f"⏰ Next weight update: {time_to_next:.0f}s")
+            bt.logging.info(
+                f"🔁 Weight retry interval: {status['config'].get('weight_retry_interval', 'n/a')}s"
+            )
             
             bt.logging.info("=" * 60)
             

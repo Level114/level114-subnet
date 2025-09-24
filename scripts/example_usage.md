@@ -13,7 +13,6 @@ The Level114 miner connects your Minecraft server to the subnet, making it eligi
 ### Required Minecraft Server Plugins
 Your Minecraft server must have these plugins installed:
 - **Level114** - Core subnet plugin (required)
-- **SpecsPlugin** - Performance monitoring (required)
 - **ViaVersion, ViaBackwards, ViaRewind** - Version compatibility (recommended)
 
 ### Basic Miner Usage
@@ -123,7 +122,7 @@ Your server's earnings depend on performance scores:
 - ✅ Keep memory usage efficient (>50% free RAM)
 
 **Participation (35% of score):**  
-- ✅ Install all required plugins (Level114, SpecsPlugin)
+- ✅ Install all required plugins (Level114)
 - ✅ Attract active players to your server
 - ✅ Maintain proper registration with subnet
 
@@ -280,7 +279,7 @@ python neurons/validator.py \
 - Ensure your Bittensor wallet is properly configured
 
 **"Missing required plugins"**
-- Your Minecraft server must have Level114 and SpecsPlugin installed
+- Your Minecraft server must have Level114 
 - Download plugins from the Level114 repository
 - Restart your Minecraft server after installing plugins
 - Check plugin compatibility with your Minecraft version
