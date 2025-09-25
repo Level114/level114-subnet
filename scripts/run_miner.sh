@@ -11,9 +11,10 @@ set -e
 # Default values
 WALLET_NAME=""
 WALLET_HOTKEY=""
-COLLECTOR_IP=""
-COLLECTOR_PORT=3000
+# Hardcoded collector URL per request
+COLLECTOR_URL="https://collector.level114.io"
 MINECRAFT_IP=""
+MINECRAFT_HOSTNAME=""
 MINECRAFT_PORT=25565
 INTERACTIVE_MODE=true
 
@@ -31,12 +32,13 @@ if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
     echo "  --non-interactive               Run in non-interactive mode with all parameters"
     echo ""
     echo "In non-interactive mode, you can use:"
-    echo "  --collector_ip IP               IP address of collector-center-main server"
-    echo "  --collector_port PORT           Collector port (default: 3000)"
-    echo "  --minecraft_ip IP               Minecraft server IP"
+    echo "  --minecraft_ip IP               Minecraft server IP (required)"
+    echo "  --minecraft_hostname HOST       Minecraft server hostname (e.g., play.myserver.com)"
     echo "  --minecraft_port PORT           Minecraft server port (default: 25565)"
     echo "  --wallet.name NAME              Your Bittensor wallet name"
     echo "  --wallet.hotkey HOTKEY          Your Bittensor wallet hotkey"
+    echo ""
+    echo "Note: Collector URL is fixed to $COLLECTOR_URL"
     echo ""
     exit 0
 fi
@@ -48,17 +50,12 @@ while [[ $# -gt 0 ]]; do
             INTERACTIVE_MODE=false
             shift
             ;;
-        --collector_ip)
-            COLLECTOR_IP="$2"
-            INTERACTIVE_MODE=false
-            shift 2
-            ;;
-        --collector_port)
-            COLLECTOR_PORT="$2"
-            shift 2
-            ;;
         --minecraft_ip)
             MINECRAFT_IP="$2"
+            shift 2
+            ;;
+        --minecraft_hostname)
+            MINECRAFT_HOSTNAME="$2"
             shift 2
             ;;
         --minecraft_port)
@@ -89,18 +86,10 @@ if [[ "$INTERACTIVE_MODE" == "true" ]]; then
     echo "through the collector-center-main service."
     echo ""
     
-    # Get collector information
-    echo "📡 Collector-Center-Main Information:"
-    read -p "Collector-center-main IP: " COLLECTOR_IP
-    read -p "Collector-center-main port (default 3000): " input_port
-    if [[ -n "$input_port" ]]; then
-        COLLECTOR_PORT="$input_port"
-    fi
-    echo ""
-    
     # Get Minecraft server information
     echo "🎮 Minecraft Server Information:"
     read -p "Minecraft server IP: " MINECRAFT_IP
+    read -p "Minecraft server hostname (e.g., play.myserver.com): " MINECRAFT_HOSTNAME
     read -p "Minecraft server port (default 25565): " input_mc_port
     if [[ -n "$input_mc_port" ]]; then
         MINECRAFT_PORT="$input_mc_port"
@@ -115,17 +104,13 @@ if [[ "$INTERACTIVE_MODE" == "true" ]]; then
 fi
 
 # Validate required parameters
-if [[ -z "$COLLECTOR_IP" ]]; then
-    echo "❌ Error: Collector IP is required"
-    echo "Please enter the collector-center-main server IP"
-    exit 1
-fi
-
 if [[ -z "$MINECRAFT_IP" ]]; then
     echo "❌ Error: Minecraft server IP is required"
     echo "Please enter the Minecraft server IP"
     exit 1
 fi
+
+# Hostname is optional
 
 if [[ -z "$WALLET_NAME" ]]; then
     echo "❌ Error: Wallet name is required"
@@ -139,8 +124,7 @@ if [[ -z "$WALLET_HOTKEY" ]]; then
     exit 1
 fi
 
-# Build collector URL
-COLLECTOR_URL="http://${COLLECTOR_IP}:${COLLECTOR_PORT}"
+# Collector URL already set (hardcoded)
 
 # Resolve project root directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -189,7 +173,11 @@ echo ""
 echo "📋 Configuration:"
 echo "  - Bittensor Wallet: $WALLET_NAME.$WALLET_HOTKEY"
 echo "  - Collector-Center: $COLLECTOR_URL"
-echo "  - Minecraft Server: $MINECRAFT_IP:$MINECRAFT_PORT"
+if [[ -n "$MINECRAFT_HOSTNAME" ]]; then
+    echo "  - Minecraft Server: $MINECRAFT_HOSTNAME ($MINECRAFT_IP):$MINECRAFT_PORT"
+else
+    echo "  - Minecraft Server: $MINECRAFT_IP:$MINECRAFT_PORT"
+fi
 echo ""
 echo "🔄 What the registration will do:"
 echo "  1. Connect your Minecraft server to the Level114 subnet"
@@ -208,8 +196,11 @@ echo ""
 # Set Python path to include project root
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
-# Build minecraft arguments - always pass the IP since it's required now
+# Build minecraft arguments - always IP, hostname if provided
 MINECRAFT_ARGS="--minecraft_ip $MINECRAFT_IP"
+if [[ -n "$MINECRAFT_HOSTNAME" ]]; then
+    MINECRAFT_ARGS="$MINECRAFT_ARGS --minecraft_hostname $MINECRAFT_HOSTNAME"
+fi
 if [[ "$MINECRAFT_PORT" != "25565" ]]; then
     MINECRAFT_ARGS="$MINECRAFT_ARGS --minecraft_port $MINECRAFT_PORT"
 fi

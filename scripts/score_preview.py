@@ -21,7 +21,7 @@ try:
     from level114.validator.scoring import (
         ServerReport, MinerContext, calculate_miner_score,
         evaluate_infrastructure, evaluate_participation, evaluate_reliability,
-        verify_report_integrity, get_constants_summary,
+        get_constants_summary,
         EXCELLENT_SCORE_THRESHOLD, GOOD_SCORE_THRESHOLD, POOR_SCORE_THRESHOLD,
         get_score_classification
     )
@@ -137,11 +137,10 @@ class ScorePreview:
             print(f"📊 Analyzing server {server_id} from storage")
             print(f"   Total reports: {stats['total_reports']}")
             print(f"   Average TPS: {stats['avg_tps']:.1f}")
-            print(f"   Average latency: {stats['avg_latency']:.3f}s")
             print(f"   Compliance rate: {stats['compliance_rate']:.1%}")
             print()
             
-            self._analyze_with_history(latest_report, history, stats['avg_latency'])
+            self._analyze_with_history(latest_report, history, 0.0)
             
         except Exception as e:
             print(f"❌ Storage error: {e}")
@@ -159,9 +158,7 @@ class ScorePreview:
         # Create minimal context
         ctx = MinerContext(
             report=report,
-            http_latency_s=latency,
-            registration_ok=True,  # Assume registered
-            compliance_ok=True,    # Assume compliant for preview
+            http_latency_s=0.0,
             history=deque([report], maxlen=60)
         )
         
@@ -180,9 +177,7 @@ class ScorePreview:
         # Create full context
         ctx = MinerContext(
             report=latest_report,
-            http_latency_s=avg_latency,
-            registration_ok=True,
-            compliance_ok=True,
+            http_latency_s=0.0,
             history=history
         )
         
@@ -250,14 +245,11 @@ class ScorePreview:
         rely_score = evaluate_reliability(ctx)
         
         print(f"   Infrastructure: {infra_score:.3f} (40%)")
-        print(f"     ├─ TPS: {ctx.report.payload.tps_actual:.1f}/{20.0} = {min(ctx.report.payload.tps_actual/20.0, 1.0):.3f}")
-        print(f"     ├─ Latency: {ctx.http_latency_s:.3f}s = {max(0, 1 - ctx.http_latency_s):.3f}")
-        print(f"     └─ Memory: {ctx.report.payload.memory_ram_info.free_ratio:.1%} free")
+        print(f"     └─ TPS: {ctx.report.payload.tps_actual:.1f}/{20.0} = {min(ctx.report.payload.tps_actual/20.0, 1.0):.3f}")
         
         print(f"   Participation: {part_score:.3f} (35%)")
         print(f"     ├─ Compliance: {'✅' if ctx.report.payload.has_required_plugins else '❌'}")
-        print(f"     ├─ Players: {ctx.report.payload.player_count} active")
-        print(f"     └─ Registration: {'✅' if ctx.registration_ok else '❌'}")
+        print(f"     └─ Players: {ctx.report.payload.player_count} active")
         
         print(f"   Reliability: {rely_score:.3f} (25%)")
         if has_history:
@@ -290,10 +282,7 @@ class ScorePreview:
         if components['infrastructure'] < 0.7:
             if ctx.report.payload.tps_actual < 18:
                 suggestions.append("🔧 Improve server TPS performance (optimize plugins, reduce lag)")
-            if ctx.http_latency_s > 0.3:
-                suggestions.append("🌐 Reduce network latency (better hosting, CDN)")
-            if ctx.report.payload.memory_ram_info.free_ratio < 0.2:
-                suggestions.append("💾 Increase available memory or optimize usage")
+            # Latency and memory suggestions removed
         
         if components['participation'] < 0.7:
             if not ctx.report.payload.has_required_plugins:

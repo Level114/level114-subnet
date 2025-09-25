@@ -1,60 +1,10 @@
+import os
 import numpy as np
 from typing import Tuple, List, Union, Any
 import bittensor
 from numpy import ndarray, dtype, floating, complexfloating
 
-U32_MAX = 4294967295
 U16_MAX = 65535
-
-
-def normalize_max_weight(x: np.ndarray, limit: float = 0.1) -> np.ndarray:
-    r"""Normalizes the numpy array x so that sum(x) = 1 and the max value is not greater than the limit.
-    Args:
-        x (:obj:`np.ndarray`):
-            Array to be max_value normalized.
-        limit: float:
-            Max value after normalization.
-    Returns:
-        y (:obj:`np.ndarray`):
-            Normalized x array.
-    """
-    epsilon = 1e-7  # For numerical stability after normalization
-
-    weights = x.copy()
-    values = np.sort(weights)
-
-    if x.sum() == 0 or len(x) * limit <= 1:
-        return np.ones_like(x) / x.size
-    else:
-        estimation = values / values.sum()
-
-        if estimation.max() <= limit:
-            return weights / weights.sum()
-
-        # Find the cumulative sum and sorted array
-        cumsum = np.cumsum(estimation, 0)
-
-        # Determine the index of cutoff
-        estimation_sum = np.array(
-            [(len(values) - i - 1) * estimation[i] for i in range(len(values))]
-        )
-        n_values = (
-            estimation / (estimation_sum + cumsum + epsilon) < limit
-        ).sum()
-
-        # Determine the cutoff based on the index
-        cutoff_scale = (limit * cumsum[n_values - 1] - epsilon) / (
-            1 - (limit * (len(estimation) - n_values))
-        )
-        cutoff = cutoff_scale * values.sum()
-
-        # Applying the cutoff
-        weights[weights > cutoff] = cutoff
-
-        y = weights / weights.sum()
-
-        return y
-
 
 def convert_weights_and_uids_for_emit(
     uids: np.ndarray, weights: np.ndarray
@@ -105,12 +55,10 @@ def convert_weights_and_uids_for_emit(
         bittensor.logging.debug("nothing to set on chain")
         return [], []  # Nothing to set on chain.
     else:
-        max_weight = float(np.max(weights))
-        weights = [
-            float(value) / max_weight for value in weights
-        ]  # max-upscale values (max_weight = 1).
+        # Preserve raw magnitudes; do not rescale by max
+        weights = [float(value) for value in weights]
         bittensor.logging.debug(
-            f"setting on chain max: {max_weight} and weights: {weights}"
+            f"emitting raw weights (no rescale): {weights}"
         )
 
     weight_vals = []
@@ -125,6 +73,13 @@ def convert_weights_and_uids_for_emit(
             weight_vals.append(uint16_val)
             weight_uids.append(uid_i)
     bittensor.logging.debug(f"final params: {weight_uids} : {weight_vals}")
+    try:
+        bittensor.logging.info(
+            "On-chain uint16 weights (uid, uint16): "
+            + str(list(zip(list(map(int, weight_uids)), list(map(int, weight_vals)))))
+        )
+    except Exception:
+        pass
     return weight_uids, weight_vals
 
 
@@ -165,8 +120,56 @@ def process_weights_for_netuid(
     elif weights.dtype != np.float32:
         weights = weights.astype(np.float32)
 
-    # Network configuration parameters from an subtensor.
-    # These parameters determine the range of acceptable weights for each neuron.
+    # Log each miner's raw score prior to any normalization or filtering.
+    try:
+        bittensor.logging.info("Pre-normalization miner scores (uid, hotkey, score):")
+        # Ensure we can index hotkeys safely
+        metagraph_n = int(metagraph.n.item() if hasattr(metagraph.n, "item") else metagraph.n)
+        for uid, score in zip(np.asarray(uids, dtype=int).tolist(), weights.tolist()):
+            hotkey = None
+            if 0 <= uid < metagraph_n and hasattr(metagraph, "hotkeys"):
+                try:
+                    hotkey = metagraph.hotkeys[uid]
+                except Exception:
+                    hotkey = None
+            if hotkey is None:
+                bittensor.logging.info(f"uid={uid} score={float(score):.6f}")
+            else:
+                bittensor.logging.info(f"uid={uid} hotkey={hotkey} score={float(score):.6f}")
+    except Exception as e:
+        # Don't break weight setting if logging fails.
+        bittensor.logging.warning(f"Failed to log pre-normalization scores: {e}")
+
+    # Helper to log the final weights that will be emitted
+    def _log_emitted_weights(log_uids: np.ndarray, log_weights: np.ndarray):
+        try:
+            bittensor.logging.info("Emitted weights (uid, hotkey, weight):")
+            metagraph_n_local = int(
+                metagraph.n.item() if hasattr(metagraph.n, "item") else metagraph.n
+            )
+            for uid, w in zip(
+                np.asarray(log_uids, dtype=int).tolist(),
+                np.asarray(log_weights, dtype=float).tolist(),
+            ):
+                hotkey = None
+                if 0 <= uid < metagraph_n_local and hasattr(metagraph, "hotkeys"):
+                    try:
+                        hotkey = metagraph.hotkeys[uid]
+                    except Exception:
+                        hotkey = None
+                if hotkey is None:
+                    bittensor.logging.info(f"uid={uid} weight={float(w):.6f}")
+                else:
+                    bittensor.logging.info(
+                        f"uid={uid} hotkey={hotkey} weight={float(w):.6f}"
+                    )
+        except Exception as e:
+            bittensor.logging.warning(f"Failed to log emitted weights: {e}")
+
+    # Testing shortcut removed: proceed with normal scoring and normalization.
+
+    # Network configuration parameters from the subtensor.
+    # These are informative now; we avoid sum-normalization and preserve raw magnitudes.
     quantile = exclude_quantile / U16_MAX
     min_allowed_weights = subtensor.min_allowed_weights(netuid=netuid)
     max_weight_limit = subtensor.max_weight_limit(netuid=netuid)
@@ -181,23 +184,33 @@ def process_weights_for_netuid(
     non_zero_weights = weights[non_zero_weight_idx]
     if non_zero_weights.size == 0 or metagraph.n < min_allowed_weights:
         bittensor.logging.warning("No non-zero weights returning all ones.")
-        final_weights = np.ones(metagraph.n) / metagraph.n
-        bittensor.logging.debug("final_weights", final_weights)
-        return np.arange(len(final_weights)), final_weights
+        final_weights = np.ones(metagraph.n, dtype=np.float32)
+        bittensor.logging.debug("final_weights_raw", final_weights)
+        final_uids = np.arange(len(final_weights))
+        _log_emitted_weights(final_uids, final_weights)
+        return final_uids, final_weights
 
     elif non_zero_weights.size < min_allowed_weights:
         bittensor.logging.warning(
             "No non-zero weights less then min allowed weight, returning all ones."
         )
-        weights = (
-            np.ones(metagraph.n) * 1e-5
-        )  # creating minimum even non-zero weights
-        weights[non_zero_weight_idx] += non_zero_weights
-        bittensor.logging.debug("final_weights", weights)
-        normalized_weights = normalize_max_weight(
-            x=weights, limit=max_weight_limit
-        )
-        return np.arange(len(normalized_weights)), normalized_weights
+        # Ensure minimum number of non-zero weights without altering existing non-zero values.
+        weights = np.zeros(metagraph.n, dtype=np.float32)
+        # Set existing non-zero weights exactly as provided
+        weights[non_zero_weight_idx] = non_zero_weights.astype(np.float32)
+        # Add small epsilon weights to additional UIDs to meet min_allowed_weights
+        needed = int(min_allowed_weights - non_zero_weights.size)
+        if needed > 0:
+            epsilon = 1e-5
+            all_uids = np.arange(metagraph.n)
+            mask = np.ones(metagraph.n, dtype=bool)
+            mask[non_zero_weight_idx] = False
+            candidate_uids = all_uids[mask][:needed]
+            weights[candidate_uids] = epsilon
+        bittensor.logging.debug("final_weights_raw", weights)
+        final_uids = np.arange(len(weights))
+        _log_emitted_weights(final_uids, weights)
+        return final_uids, weights
 
     bittensor.logging.debug("non_zero_weights", non_zero_weights)
 
@@ -219,10 +232,7 @@ def process_weights_for_netuid(
     bittensor.logging.debug("non_zero_weight_uids", non_zero_weight_uids)
     bittensor.logging.debug("non_zero_weights", non_zero_weights)
 
-    # Normalize weights and return.
-    normalized_weights = normalize_max_weight(
-        x=non_zero_weights, limit=max_weight_limit
-    )
-    bittensor.logging.debug("final_weights", normalized_weights)
-
-    return non_zero_weight_uids, normalized_weights
+    # Preserve raw magnitudes (no rescale or normalization)
+    bittensor.logging.debug("final_weights_raw", non_zero_weights)
+    _log_emitted_weights(non_zero_weight_uids, non_zero_weights)
+    return non_zero_weight_uids, non_zero_weights

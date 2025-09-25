@@ -12,13 +12,6 @@ from .report_schema import (
     MemoryInfo, 
     ActivePlayer
 )
-from .integrity import (
-    verify_report_integrity,
-    verify_payload_hash,
-    verify_signature,
-    ReplayProtection,
-    get_replay_protection
-)
 from .scorer import (
     MinerContext,
     calculate_miner_score,
@@ -37,13 +30,6 @@ __all__ = [
     'SystemInfo',
     'MemoryInfo',
     'ActivePlayer',
-    
-    # Integrity
-    'verify_report_integrity',
-    'verify_payload_hash',
-    'verify_signature',
-    'ReplayProtection',
-    'get_replay_protection',
     
     # Scoring
     'MinerContext',

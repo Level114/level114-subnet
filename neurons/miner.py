@@ -19,6 +19,7 @@ import requests
 import sys
 import argparse
 import bittensor as bt
+from typing import Optional
 
 
 class MinecraftServerRegistration:
@@ -80,6 +81,7 @@ class MinecraftServerRegistration:
             
             # Get server IP
             minecraft_ip = getattr(self.config, 'minecraft_ip', None) or self.get_public_ip()
+            minecraft_hostname = getattr(self.config, 'minecraft_hostname', None)
             minecraft_port = getattr(self.config, 'minecraft_port', 25565)
             
             if not minecraft_ip:
@@ -97,10 +99,15 @@ class MinecraftServerRegistration:
                 "hotkey": self.wallet.hotkey.ss58_address,
                 "signature": signature
             }
+            if minecraft_hostname:
+                registration_data["hostname"] = minecraft_hostname
             
             # Make registration request to collector
             collector_url = getattr(self.config, 'collector_url', 'http://localhost:8000')
-            bt.logging.info(f"Registering Minecraft server at {minecraft_ip}:{minecraft_port}")
+            if minecraft_hostname:
+                bt.logging.info(f"Registering Minecraft server at {minecraft_hostname} ({minecraft_ip}):{minecraft_port}")
+            else:
+                bt.logging.info(f"Registering Minecraft server at {minecraft_ip}:{minecraft_port}")
             bt.logging.info(f"Collector URL: {collector_url}")
             
             response = requests.post(
@@ -118,12 +125,14 @@ class MinecraftServerRegistration:
                 bt.logging.success(f"✅ Minecraft server registered successfully!")
                 bt.logging.info(f"🎯 Server ID: {server_id}")
                 bt.logging.info(f"🔑 API Token: {api_token[:20]}...")
+                if minecraft_hostname:
+                    bt.logging.info(f"🧭 Minecraft Hostname: {minecraft_hostname}")
                 bt.logging.info(f"🌍 Minecraft IP: {minecraft_ip}")
                 bt.logging.info(f"🚪 Minecraft Port: {minecraft_port}")
                 bt.logging.info(f"🔐 Hotkey: {self.wallet.hotkey.ss58_address}")
                 
                 # Save credentials to file
-                self._save_credentials(server_id, api_token, key_id, minecraft_ip, minecraft_port)
+                self._save_credentials(server_id, api_token, key_id, minecraft_ip, minecraft_port, minecraft_hostname)
                 
                 return True
             else:
@@ -135,7 +144,7 @@ class MinecraftServerRegistration:
             bt.logging.error(f"❌ Error registering Minecraft server: {e}")
             return False
 
-    def _save_credentials(self, server_id: str, api_token: str, key_id: str, minecraft_ip: str, minecraft_port: int):
+    def _save_credentials(self, server_id: str, api_token: str, key_id: str, minecraft_ip: str, minecraft_port: int, minecraft_hostname: Optional[str] = None):
         """Save server credentials to file"""
         try:
             import os
@@ -163,6 +172,7 @@ class MinecraftServerRegistration:
 Server ID: {server_id}
 API Token: {api_token}
 Key ID: {key_id}
+Minecraft Hostname: {minecraft_hostname or ''}
 Minecraft IP: {minecraft_ip}
 Minecraft Port: {minecraft_port}
 
@@ -192,6 +202,7 @@ Registration Time: {timestamp}
                 "server_id": server_id,
                 "api_token": api_token,
                 "key_id": key_id,
+                "minecraft_hostname": minecraft_hostname,
                 "minecraft_ip": minecraft_ip,
                 "minecraft_port": minecraft_port,
                 "wallet_name": wallet_name,
@@ -230,6 +241,7 @@ def main():
     
     # Minecraft server arguments
     parser.add_argument('--minecraft_ip', type=str, help='Minecraft server IP (auto-detected if not provided)')
+    parser.add_argument('--minecraft_hostname', type=str, help='Minecraft server hostname (e.g., play.myserver.com)')
     parser.add_argument('--minecraft_port', type=int, default=25565, help='Minecraft server port (default: 25565)')
     
     # Logging
@@ -244,6 +256,8 @@ def main():
     bt.logging.info("🚀 Starting Level114 Minecraft Server Registration")
     bt.logging.info(f"Wallet: {args.wallet_name}.{args.wallet_hotkey}")
     bt.logging.info(f"Collector: {args.collector_url}")
+    if getattr(args, 'minecraft_hostname', None):
+        bt.logging.info(f"Hostname: {args.minecraft_hostname}")
     
     try:
         # Create registration client

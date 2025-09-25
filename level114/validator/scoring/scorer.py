@@ -22,9 +22,7 @@ class MinerContext:
     Context data for scoring a miner server
     """
     report: ServerReport                    # Latest server report
-    http_latency_s: float                   # HTTP latency measured by validator
-    registration_ok: bool                   # Server is properly registered
-    compliance_ok: bool                     # Integrity checks passed
+    http_latency_s: float                   # Placeholder; latency not used
     history: deque                          # Recent report history (ServerReport objects)
     
     def __post_init__(self):
@@ -32,8 +30,8 @@ class MinerContext:
         if not isinstance(self.history, deque):
             self.history = deque(self.history or [], maxlen=MAX_REPORT_HISTORY)
         
-        # Ensure reasonable latency value
-        self.http_latency_s = max(0.0, min(self.http_latency_s, MAX_LATENCY_S * 2))
+        # Latency is ignored in scoring
+        self.http_latency_s = 0.0
 
 
 def evaluate_infrastructure(miner_ctx: MinerContext) -> float:
@@ -50,7 +48,7 @@ def evaluate_infrastructure(miner_ctx: MinerContext) -> float:
         report = miner_ctx.report
         payload = report.payload
         
-        # 1. TPS Score (55% of infrastructure)
+        # TPS-only infrastructure score
         tps_actual = payload.tps_actual  # Converted from tps_millis
         tps_clamped = max(0.0, min(tps_actual, MAX_TPS_BONUS))
         tps_score = tps_clamped / IDEAL_TPS if IDEAL_TPS > 0 else 0.0
@@ -60,43 +58,10 @@ def evaluate_infrastructure(miner_ctx: MinerContext) -> float:
         if tps_actual < MIN_TPS_THRESHOLD:
             tps_score *= 0.1  # Severe penalty for broken servers
         
-        # 2. Latency Score (25% of infrastructure)  
-        latency_clamped = max(0.0, min(miner_ctx.http_latency_s, MAX_LATENCY_S))
-        latency_score = 1.0 - (latency_clamped / MAX_LATENCY_S)
-        
-        # Bonus for excellent latency
-        if miner_ctx.http_latency_s <= EXCELLENT_LATENCY_S:
-            latency_score = min(1.0, latency_score * 1.1)
-        
-        # 3. Memory Headroom Score (20% of infrastructure)
-        memory_info = payload.memory_ram_info
-        if memory_info.total_bytes > 0:
-            headroom_ratio = memory_info.free_ratio
-            
-            if headroom_ratio < MIN_MEMORY_HEADROOM:
-                # Penalty for low memory
-                memory_score = headroom_ratio / MIN_MEMORY_HEADROOM * 0.5
-            elif headroom_ratio > (1 - IDEAL_MEMORY_USAGE):
-                # Good headroom
-                memory_score = 1.0
-            else:
-                # Linear scale between minimum and ideal
-                range_size = (1 - IDEAL_MEMORY_USAGE) - MIN_MEMORY_HEADROOM
-                memory_score = 0.5 + 0.5 * (headroom_ratio - MIN_MEMORY_HEADROOM) / range_size
-                
-            memory_score = max(0.0, min(1.0, memory_score))
-        else:
-            memory_score = 0.5  # Default for missing memory data
-        
-        # Combine with weights
-        infra_score = (
-            W_INFRA_TPS * tps_score +
-            W_INFRA_LATENCY * latency_score +
-            W_INFRA_MEMORY * memory_score
-        )
+        infra_score = tps_score
         
         if DEBUG_SCORING:
-            print(f"Infrastructure: TPS={tps_score:.3f}, Latency={latency_score:.3f}, Memory={memory_score:.3f} -> {infra_score:.3f}")
+            print(f"Infrastructure: TPS={tps_score:.3f} -> {infra_score:.3f}")
         
         return max(0.0, min(1.0, infra_score))
         
@@ -135,11 +100,8 @@ def evaluate_participation(miner_ctx: MinerContext) -> float:
         plugin_bonus = min(0.4, bonus_plugins_present / max_bonus * 0.4)  # Up to 40% bonus
         compliance_score += plugin_bonus
         
-        # Integrity verification bonus/penalty
-        if miner_ctx.compliance_ok:
-            compliance_score = min(1.0, compliance_score)
-        else:
-            compliance_score *= INTEGRITY_FAILURE_CAP  # Major penalty for integrity failure
+        # Integrity removed; clamp to 1.0
+        compliance_score = min(1.0, compliance_score)
         
         # 2. Players Score (30% of participation)
         player_count = payload.player_count
@@ -159,18 +121,14 @@ def evaluate_participation(miner_ctx: MinerContext) -> float:
             
             players_score = min(1.0, raw_player_score)
         
-        # 3. Registration Score (15% of participation)
-        registration_score = 1.0 if miner_ctx.registration_ok else 0.0
-        
-        # Combine with weights
+        # Combine with weights (no registration component)
         part_score = (
             W_PART_COMPLIANCE * compliance_score +
-            W_PART_PLAYERS * players_score +
-            W_PART_REGISTRATION * registration_score
+            W_PART_PLAYERS * players_score
         )
         
         if DEBUG_SCORING:
-            print(f"Participation: Compliance={compliance_score:.3f}, Players={players_score:.3f}, Registration={registration_score:.3f} -> {part_score:.3f}")
+            print(f"Participation: Compliance={compliance_score:.3f}, Players={players_score:.3f} -> {part_score:.3f}")
         
         return max(0.0, min(1.0, part_score))
         
@@ -416,12 +374,7 @@ def calculate_miner_score(miner_ctx: MinerContext) -> Tuple[int, Dict[str, float
             W_RELY * rely_score
         )
         
-        # Apply final penalties for critical failures
-        if not miner_ctx.compliance_ok:
-            raw_score = min(raw_score, INTEGRITY_FAILURE_CAP)
-        
-        if not miner_ctx.registration_ok:
-            raw_score *= 0.8  # 20% penalty for registration issues
+        # Integrity and registration penalties removed
         
         # Normalize to final score
         final_score = normalize_score(raw_score)

@@ -8,6 +8,7 @@ collector reports, scoring system, and Bittensor weight updates.
 import asyncio
 import time
 import traceback
+import math
 from typing import List, Dict, Optional, Tuple
 from collections import deque
 import bittensor as bt
@@ -15,8 +16,8 @@ import numpy as np
 
 from .scoring import (
     ServerReport, MinerContext, calculate_miner_score,
-    verify_report_integrity, apply_score_smoothing,
-    get_replay_protection, DEBUG_SCORING
+    apply_score_smoothing,
+    DEBUG_SCORING
 )
 from .storage import ValidatorStorage, get_storage
 from ..api.collector_center_api import CollectorCenterAPI
@@ -56,7 +57,7 @@ class Level114ValidatorRunner:
         self.storage = storage or get_storage()
         
         # Scoring state
-        self.replay_protection = get_replay_protection()
+        self.replay_protection = None
         self.last_weights_update = 0
         self.score_cache = {}  # server_id -> (score, timestamp)
         self.last_weight_update_attempt = 0
@@ -64,12 +65,29 @@ class Level114ValidatorRunner:
         self._last_committed_weights = None
         self._last_committed_uids = None
         validator_cfg = getattr(self.config, 'validator', None)
-        default_retry = getattr(validator_cfg, 'weight_retry_interval', 60) if validator_cfg else 60
-        self.weight_retry_interval = max(default_retry, 10)
-        self.weight_update_interval = max(
-            getattr(validator_cfg, 'weight_update_interval', 300) if validator_cfg else 300,
-            10
+
+        def _coerce_interval(value, fallback):
+            try:
+                if value is None:
+                    raise ValueError
+                numeric = float(value)
+                if not math.isfinite(numeric):
+                    raise ValueError
+                return max(numeric, 0.0)
+            except (TypeError, ValueError):
+                return float(fallback)
+
+        default_retry = _coerce_interval(
+            getattr(validator_cfg, 'weight_retry_interval', None) if validator_cfg else None,
+            60
         )
+        default_update = _coerce_interval(
+            getattr(validator_cfg, 'weight_update_interval', None) if validator_cfg else None,
+            300
+        )
+
+        self.weight_retry_interval = max(default_retry, 10.0)
+        self.weight_update_interval = max(default_update, 10.0)
         
         # Performance tracking
         self.cycle_count = 0
@@ -233,9 +251,8 @@ class Level114ValidatorRunner:
         """
         try:
             # 1. Fetch latest report from collector
-            fetch_start = time.time()
+            # Fetch latest report from collector (do not use HTTP latency in scoring)
             status, reports = self.collector_api.get_server_reports(server_id, limit=1)
-            http_latency = time.time() - fetch_start
             
             if status != 200 or not reports:
                 bt.logging.debug(f"No reports for server {server_id}")
@@ -244,45 +261,31 @@ class Level114ValidatorRunner:
             # 2. Parse report
             latest_report = ServerReport.from_dict(reports[0])
             
-            # 3. Verify integrity
-            integrity_results = verify_report_integrity(
-                latest_report,
-                replay_protection=self.replay_protection,
-                pubkey_resolver=None  # TODO: Implement when keys available
-            )
-            
-            compliance_ok = integrity_results['overall_valid']
-            
-            # 4. Load historical context
+            # 3. Load historical context
             history = self.storage.load_history(server_id, max_rows=60)
             
-            # 5. Check registration status
-            registration_ok = self.storage.is_server_registered(server_id)
-            
-            # 6. Create scoring context
+            # 4. Create scoring context (no registration/integrity/latency effects)
             context = MinerContext(
                 report=latest_report,
-                http_latency_s=http_latency,
-                registration_ok=registration_ok,
-                compliance_ok=compliance_ok,
+                http_latency_s=0.0,
                 history=history
             )
             
-            # 7. Calculate score
+            # 5. Calculate score
             new_score, components = calculate_miner_score(context)
             
-            # 8. Apply smoothing
+            # 6. Apply smoothing
             previous_score_data = self.storage.get_score(server_id)
             previous_score = previous_score_data['score'] if previous_score_data else None
             
             smoothed_score = apply_score_smoothing(new_score, previous_score)
             
-            # 9. Store results
+            # 7. Store results
             self.storage.append_report(
                 server_id,
                 latest_report, 
-                latency=http_latency,
-                compliance=compliance_ok
+                latency=0.0,
+                compliance=True
             )
             
             self.storage.upsert_score(
@@ -293,13 +296,12 @@ class Level114ValidatorRunner:
                 components['reliability']
             )
             
-            # 10. Cache for weight updates
+            # 8. Cache for weight updates
             self.score_cache[server_id] = (smoothed_score, time.time())
             
             if DEBUG_SCORING:
                 bt.logging.debug(
-                    f"Scored server {server_id}: {smoothed_score} "
-                    f"(raw: {new_score}, compliance: {compliance_ok})"
+                    f"Scored server {server_id}: {smoothed_score} (raw: {new_score})"
                 )
             
             return {
@@ -307,9 +309,8 @@ class Level114ValidatorRunner:
                 'score': smoothed_score,
                 'raw_score': new_score,
                 'components': components,
-                'latency': http_latency,
-                'compliance': compliance_ok,
-                'registration': registration_ok,
+                'latency': 0.0,
+                'compliance': True,
                 'reports_count': len(history)
             }
             
@@ -358,12 +359,13 @@ class Level114ValidatorRunner:
                     # Convert score (0-1000) to weight (0-1)
                     weight = score / 1000.0
                     raw_weights[uid] = weight
+                    # Track total only for logging; do not normalize by it
                     total_weight += weight
                     weights_assigned += 1
             
-            # 3. Normalize weights
-            if total_weight > 0:
-                raw_weights = raw_weights / total_weight
+            # 3. Preserve raw magnitudes (no sum-normalization)
+            # Ensure weights are within [0,1] bounds
+            raw_weights = np.clip(raw_weights, 0.0, 1.0)
             
             # 4. Process weights according to subnet limitations
             processed_uids, processed_weights = process_weights_for_netuid(

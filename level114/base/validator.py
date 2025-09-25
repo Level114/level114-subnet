@@ -117,8 +117,6 @@ class BaseValidatorNeuron(BaseNeuron):
         # This loop maintains the validator's operations until intentionally stopped.
         try:
             while True:
-                bt.logging.info(f"step({self.step}) block({self.block})")
-
                 # Run validate step.
                 self.loop.run_until_complete(self.concurrent_validate())
 
@@ -194,9 +192,10 @@ class BaseValidatorNeuron(BaseNeuron):
                 f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
 
-        # Calculate the average reward for each uid across non-zero values.
-        # Replace any NaN values with 0.
-        raw_weights = torch.nn.functional.normalize(self.scores, p=1, dim=0)
+        # Use raw scores as weights (no sum-normalization).
+        # Replace any NaN values with 0 and clamp negatives to 0.
+        raw_weights = torch.nan_to_num(self.scores, nan=0.0)
+        raw_weights = torch.clamp(raw_weights, min=0.0)
 
         bt.logging.debug("raw_weights", raw_weights)
         bt.logging.debug("raw_weight_uids", self.metagraph.uids.tolist())
@@ -306,7 +305,6 @@ class BaseValidatorNeuron(BaseNeuron):
 
     def save_state(self):
         """Saves the state of the validator to a file."""
-        bt.logging.info("Saving validator state.")
 
         # Save the state of the validator to file.
         torch.save(
