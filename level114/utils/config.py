@@ -161,8 +161,8 @@ def add_validator_args(cls, parser):
     validator_group.add_argument(
         "--validator.validation_interval", 
         type=int,
-        help="Interval in seconds between validation cycles (default: 30)",
-        default=30,
+        help="Interval in seconds between validation cycles (default: 70)",
+        default=70,
     )
 
 

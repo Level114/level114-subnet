@@ -6,6 +6,7 @@ from typing import Optional, Dict, List, Tuple, Any
 from level114.types import ValidatorServer
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 import json
 import bittensor as bt
 
@@ -32,13 +33,21 @@ class CollectorCenterAPI:
             }
         return headers
 
-    def get_validator_server_ids(self, hotkeys: List[str], timeout_seconds: Optional[float] = None) -> Tuple[int, List[ValidatorServer]]:
-        if not hotkeys:
+    def _fetch_validator_server_ids_chunk(
+        self,
+        hotkeys_chunk: List[str],
+        timeout: float,
+        chunk_index: int,
+        total_chunks: int,
+    ) -> Tuple[int, List[ValidatorServer]]:
+        """Fetch validator ids for a subset of hotkeys."""
+        if not hotkeys_chunk:
             return 400, []
-        query = urlencode({"hotkeys": ",".join(hotkeys)})
+
+        query = urlencode({"hotkeys": ",".join(hotkeys_chunk)})
         url = f"{self.base_url}/validators/servers/ids?{query}"
         req = Request(url, headers=self.default_headers(), method="GET")
-        timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+
         try:
             with urlopen(req, timeout=timeout) as resp:
                 status = resp.getcode()
@@ -47,8 +56,11 @@ class CollectorCenterAPI:
                     data = json.loads(body)
                 except json.JSONDecodeError:
                     if status < 200 or status >= 300:
-                        bt.logging.error(f"collector ids status={status} body={body}")
+                        bt.logging.error(
+                            f"collector ids chunk={chunk_index}/{total_chunks} status={status} body={body}"
+                        )
                     return status, []
+
                 items_raw = data.get("items", []) if isinstance(data, dict) else []
                 items: List[ValidatorServer] = []
                 for item in items_raw:
@@ -58,12 +70,66 @@ class CollectorCenterAPI:
                         reg = item.get("registered_at")
                         if vid and hk:
                             items.append(ValidatorServer(id=vid, hotkey=hk, registered_at=reg))
+
                 if status < 200 or status >= 300:
-                    bt.logging.error(f"collector ids status={status} body={body}")
+                    bt.logging.error(
+                        f"collector ids chunk={chunk_index}/{total_chunks} status={status} body={body}"
+                    )
                 return status, items
-        except Exception as e:
-            bt.logging.error(f"collector ids error: {e}")
+        except HTTPError as e:
+            bt.logging.error(
+                f"collector ids chunk={chunk_index}/{total_chunks} error: HTTP {e.code} - {e.reason}"
+            )
+            return e.code, []
+        except Exception as e:  # noqa: BLE001
+            bt.logging.error(
+                f"collector ids chunk={chunk_index}/{total_chunks} error: {e}"
+            )
             return 599, []
+
+    def get_validator_server_ids(
+        self, hotkeys: List[str], timeout_seconds: Optional[float] = None
+    ) -> Tuple[int, List[ValidatorServer]]:
+        if not hotkeys:
+            return 400, []
+
+        # Preserve order while removing duplicates to keep requests as small as possible.
+        unique_hotkeys = list(dict.fromkeys(hotkeys))
+
+        timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+
+        max_chunks = 5
+        chunk_count = min(max_chunks, len(unique_hotkeys)) or 1
+        chunk_size = max(1, (len(unique_hotkeys) + chunk_count - 1) // chunk_count)
+        total_chunks = (len(unique_hotkeys) + chunk_size - 1) // chunk_size
+
+        aggregated: Dict[str, ValidatorServer] = {}
+        first_error_status: Optional[int] = None
+        any_success = False
+
+        for idx in range(0, len(unique_hotkeys), chunk_size):
+            chunk_index = (idx // chunk_size) + 1
+            chunk_hotkeys = unique_hotkeys[idx : idx + chunk_size]
+            status, items = self._fetch_validator_server_ids_chunk(
+                chunk_hotkeys,
+                timeout,
+                chunk_index,
+                total_chunks,
+            )
+
+            if first_error_status is None and (status < 200 or status >= 300):
+                first_error_status = status
+            if 200 <= status < 300:
+                any_success = True
+
+            for item in items:
+                if item.hotkey not in aggregated:
+                    aggregated[item.hotkey] = item
+
+        if aggregated or any_success:
+            return (first_error_status or 200), list(aggregated.values())
+
+        return (first_error_status or 599), []
 
     def get_validator_server_ids_map(self, hotkeys: List[str], timeout_seconds: Optional[float] = None) -> Tuple[int, Dict[str, ValidatorServer]]:
         status, items = self.get_validator_server_ids(hotkeys, timeout_seconds)
@@ -140,5 +206,3 @@ class CollectorCenterAPI:
         except Exception as e:
             bt.logging.error(f"collector reports error server_id={server_id}: {e}")
             return 599, []
-
-

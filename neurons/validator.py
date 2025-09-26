@@ -25,6 +25,9 @@ from level114.validator.runner import Level114ValidatorRunner
 from level114.validator.storage import get_storage
 
 
+MIN_VALIDATION_INTERVAL = 70  # seconds
+
+
 class Validator(BaseValidatorNeuron):
     """
     Level114 validator neuron class. This validator queries nodes for their performance metrics
@@ -77,11 +80,23 @@ class Validator(BaseValidatorNeuron):
         """
         try:
             # Check if enough time has passed since last validation
-            validation_interval = getattr(self.config.validator, 'validation_interval', 30)
+            configured_interval = getattr(
+                self.config.validator, 'validation_interval', MIN_VALIDATION_INTERVAL
+            )
+            validation_interval = max(configured_interval, MIN_VALIDATION_INTERVAL)
             current_time = time.time()
             
             if not hasattr(self, 'last_validation_time'):
                 self.last_validation_time = 0
+            
+            if (
+                validation_interval > configured_interval
+                and not getattr(self, '_warned_validation_interval', False)
+            ):
+                bt.logging.warning(
+                    f"Validation interval increased to {validation_interval}s (minimum enforced)"
+                )
+                self._warned_validation_interval = True
             
             if current_time - self.last_validation_time < validation_interval:
                 # Not time for validation yet, just wait

@@ -42,7 +42,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
   --collector.timeout 30.0 \
   --collector.reports_limit 50 \
   --validator.weight_update_interval 300 \
-  --validator.validation_interval 30 \
+  --validator.validation_interval 70 \
   --log_level INFO
 ```
 
@@ -62,7 +62,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 
 ### Validator Scoring Settings
 - `--validator.weight_update_interval SEC` - Weight update frequency (default: 300 = 5 minutes)
-- `--validator.validation_interval SEC` - Validation cycle interval (default: 30 seconds)
+- `--validator.validation_interval SEC` - Validation cycle interval (default: 70 seconds, minimum enforced to avoid rate limits)
 
 ### Logging
 - `--log_level LEVEL` - DEBUG, INFO, WARNING, ERROR (default: INFO)
@@ -236,16 +236,16 @@ REQUIRED_PLUGINS = {"Level114"}
 
 ### Performance Tuning
 
-**High-frequency validation:**
+**Standard cadence (minimum allowed):**
 ```bash
---validator.validation_interval 15    # Check every 15s
---validator.weight_update_interval 120  # Update weights every 2min
+--validator.validation_interval 70     # Check every 70s
+--validator.weight_update_interval 300 # Update weights every 5min
 ```
 
 **Conservative validation:**
 ```bash
---validator.validation_interval 60     # Check every 60s
---validator.weight_update_interval 600  # Update weights every 10min
+--validator.validation_interval 120    # Check every 2min
+--validator.weight_update_interval 600 # Update weights every 10min
 ```
 
 ## 📞 Support
@@ -258,7 +258,7 @@ REQUIRED_PLUGINS = {"Level114"}
 
 A well-tuned validator should achieve:
 
-- **Validation cycles**: 30-60 seconds each
+- **Validation cycles**: 70-120 seconds each
 - **Weight updates**: Every 5 minutes
 - **API latency**: <500ms average
 - **Storage growth**: ~1MB per day

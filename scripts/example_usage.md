@@ -160,7 +160,7 @@ The Level114 validator features an advanced scoring system that evaluates Minecr
     --collector.timeout 30.0 \
     --collector.reports_limit 50 \
     --validator.weight_update_interval 300 \
-    --validator.validation_interval 30 \
+    --validator.validation_interval 70 \
     --wallet.name production_wallet \
     --wallet.hotkey validator_hotkey \
     --log_level INFO
@@ -177,7 +177,7 @@ python neurons/validator.py \
     --collector.url http://collector.level114.io:3000 \
     --collector.api_key vk_your_api_key_here \
     --validator.weight_update_interval 300 \
-    --validator.validation_interval 30
+    --validator.validation_interval 70
 ```
 
 ### What the validator does:
@@ -241,7 +241,7 @@ python neurons/validator.py \
 
 #### Validator Scoring Settings
 - `--validator.weight_update_interval SEC` - Weight update frequency (default: 300 = 5 minutes)
-- `--validator.validation_interval SEC` - Validation cycle interval (default: 30 seconds)
+- `--validator.validation_interval SEC` - Validation cycle interval (default: 70 seconds, minimum enforced)
 
 ### Scoring System Overview:
 
@@ -339,8 +339,8 @@ python neurons/validator.py \
 
 ### Performance Issues
 
-**"Validation cycles taking too long (>60s)"**
-- Increase `--validator.validation_interval` to reduce frequency
+**"Validation cycles taking too long (>120s)"**
+- Increase `--validator.validation_interval` (minimum 70s) to reduce frequency
 - Check network connectivity to collector API
 - Consider reducing `--collector.reports_limit` for faster queries
 
@@ -397,7 +397,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
     --network test \
     --collector.url http://collector.level114.io:3000 \
     --collector.api_key vk_test_your_key \
-    --validator.validation_interval 60 \
+    --validator.validation_interval 90 \
     --wallet.name test_wallet \
     --wallet.hotkey test_hotkey
 ```
@@ -410,7 +410,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
     --collector.url http://localhost:3000 \
     --collector.api_key vk_local_test_key \
     --validator.weight_update_interval 60 \
-    --validator.validation_interval 15 \
+    --validator.validation_interval 70 \
     --wallet.name local_wallet \
     --wallet.hotkey local_hotkey
 ```
@@ -439,7 +439,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ```
 
 ### Performance Expectations:
-- **Validation cycles**: 30-60 seconds each
+- **Validation cycles**: 70-120 seconds each
 - **Weight updates**: Every 5 minutes (300s)
 - **API latency**: <500ms average
 - **Storage growth**: ~1MB per day
@@ -451,8 +451,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ### High-Performance Setup:
 ```bash
 ./scripts/run_validator.sh \
-    --validator.validation_interval 15 \
-    --validator.weight_update_interval 120 \
+    --validator.validation_interval 70 \
+    --validator.weight_update_interval 240 \
     --collector.reports_limit 100 \
     --collector.timeout 30.0 \
     --log_level INFO
@@ -461,7 +461,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ### Conservative Setup:
 ```bash
 ./scripts/run_validator.sh \
-    --validator.validation_interval 60 \
+    --validator.validation_interval 150 \
     --validator.weight_update_interval 600 \
     --collector.reports_limit 10 \
     --collector.timeout 10.0 \
