@@ -62,8 +62,10 @@ W_RELY = 0.25                       # Reliability (uptime, stability, recovery)
 W_INFRA_TPS = 1.0                   # TPS performance only
 
 # Participation sub-weights (no registration)
-W_PART_COMPLIANCE = 0.65            # Plugin compliance
-W_PART_PLAYERS = 0.35               # Player activity
+# Keep active players at ~5% of the overall score by shrinking their share of the
+# participation component.
+W_PART_COMPLIANCE = 0.8571428571428571  # Plugin compliance
+W_PART_PLAYERS = 0.14285714285714285    # Player activity (~5% overall weight)
 
 # Reliability sub-weights (must sum to 1.0)
 W_RELY_UPTIME = 0.50                # Uptime trends

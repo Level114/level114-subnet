@@ -41,9 +41,8 @@ Evaluates server technical performance and resource efficiency.
 Measures server engagement and compliance with subnet requirements.
 
 **Sub-components:**
-- **Compliance (55%)** - Required plugins and integrity checks
-- **Player Activity (30%)** - Active player counts and engagement
-- **Registration (15%)** - Proper validator registration status
+- **Compliance (≈86%)** - Required plugins and integrity checks
+- **Player Activity (≈14%)** - Active player counts and engagement (~5% overall weight)
 
 **Requirements:**
 - **Required Plugins:** Level114
