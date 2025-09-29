@@ -25,7 +25,6 @@ try:
         EXCELLENT_SCORE_THRESHOLD, GOOD_SCORE_THRESHOLD, POOR_SCORE_THRESHOLD,
         get_score_classification
     )
-    from level114.validator.storage import ValidatorStorage
     from level114.api.collector_center_api import CollectorCenterAPI
 except ImportError as e:
     print(f"Error importing Level114 modules: {e}")
@@ -36,9 +35,8 @@ except ImportError as e:
 class ScorePreview:
     """Score preview and analysis tool"""
     
-    def __init__(self, api_key=None, collector_url=None, db_path=None):
+    def __init__(self, api_key=None, collector_url=None):
         """Initialize the preview tool"""
-        self.storage = ValidatorStorage(db_path) if db_path else None
         self.collector_api = None
         
         if api_key and collector_url:
@@ -79,7 +77,7 @@ class ScorePreview:
         
         try:
             # Get recent reports
-            success, reports = self.collector_api.get_server_reports(server_id, limit=10)
+            success, reports = self.collector_api.get_server_reports(server_id, limit=25)
             
             if not success:
                 print(f"❌ Failed to fetch reports for server {server_id}")
@@ -112,38 +110,6 @@ class ScorePreview:
             
         except Exception as e:
             print(f"❌ API error: {e}")
-    
-    def preview_from_storage(self, server_id: str):
-        """Preview score from local storage"""
-        if not self.storage:
-            print("❌ Storage not configured")
-            return
-        
-        try:
-            # Get server stats
-            stats = self.storage.get_server_stats(server_id)
-            if not stats.get('total_reports', 0):
-                print(f"❌ No reports found for server {server_id} in storage")
-                return
-            
-            # Load recent history
-            history = self.storage.load_history(server_id, max_rows=20)
-            if not history:
-                print(f"❌ No report history found for server {server_id}")
-                return
-            
-            latest_report = history[-1]  # Most recent
-            
-            print(f"📊 Analyzing server {server_id} from storage")
-            print(f"   Total reports: {stats['total_reports']}")
-            print(f"   Average TPS: {stats['avg_tps']:.1f}")
-            print(f"   Compliance rate: {stats['compliance_rate']:.1%}")
-            print()
-            
-            self._analyze_with_history(latest_report, history, 0.0)
-            
-        except Exception as e:
-            print(f"❌ Storage error: {e}")
     
     def _analyze_single_report(self, report: ServerReport, latency: float = 0.1):
         """Analyze a single report without history"""
@@ -355,9 +321,6 @@ Examples:
   # Preview from collector API
   python score_preview.py --server-id dd227594-... --from-api
   
-  # Preview from local storage
-  python score_preview.py --server-id dd227594-... --from-storage
-  
   # Show scoring configuration
   python score_preview.py --show-constants
         """
@@ -367,7 +330,6 @@ Examples:
     input_group = parser.add_mutually_exclusive_group()
     input_group.add_argument('--json', help='JSON file with server report')
     input_group.add_argument('--from-api', action='store_true', help='Fetch from collector API')
-    input_group.add_argument('--from-storage', action='store_true', help='Load from local storage')
     input_group.add_argument('--show-constants', action='store_true', help='Show scoring constants')
     
     # Server identification
@@ -381,7 +343,6 @@ Examples:
     # Analysis options
     parser.add_argument('--latency', type=float, default=0.1, 
                        help='HTTP latency in seconds (default: 0.1)')
-    parser.add_argument('--db-path', help='Path to storage database')
     
     args = parser.parse_args()
     
@@ -395,21 +356,17 @@ Examples:
     if args.from_api and not args.server_id:
         parser.error("--from-api requires --server-id")
     
-    if args.from_storage and not args.server_id:
-        parser.error("--from-storage requires --server-id")
-    
     if args.from_api and not args.api_key:
         parser.error("--from-api requires --api-key")
     
-    if not any([args.json, args.from_api, args.from_storage]):
-        parser.error("Must specify one of: --json, --from-api, --from-storage")
+    if not any([args.json, args.from_api]):
+        parser.error("Must specify one of: --json, --from-api")
     
     # Initialize preview tool
     try:
         preview = ScorePreview(
             api_key=args.api_key,
             collector_url=args.collector_url,
-            db_path=args.db_path
         )
     except Exception as e:
         print(f"❌ Failed to initialize preview tool: {e}")
@@ -421,8 +378,6 @@ Examples:
             preview.preview_from_json(args.json, args.latency)
         elif args.from_api:
             preview.preview_from_api(args.server_id)
-        elif args.from_storage:
-            preview.preview_from_storage(args.server_id)
             
     except KeyboardInterrupt:
         print("\n⏹️  Analysis interrupted")

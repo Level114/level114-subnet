@@ -13,10 +13,10 @@ The Level114 subnet scoring system evaluates Minecraft server performance across
 └─────────────────┘    └──────────────────┘    └─────────────────┘
          │                       │                       │
          │                       │                       │
-    ┌────▼────┐              ┌───▼───┐               ┌───▼───┐
-    │ Reports │              │Storage│               │Weights│
-    │Database │              │ SQLite│               │Update │
-    └─────────┘              └───────┘               └───────┘
+    ┌────▼────┐              ┌───▼────┐              ┌───▼───┐
+    │ Reports │              │Runtime │              │Weights│
+    │ Stream  │              │ Cache  │              │Update │
+    └─────────┘              └────────┘              └───────┘
 ```
 
 ## Scoring Components
@@ -227,9 +227,7 @@ from collections import deque
 # Create context
 context = MinerContext(
     report=server_report,
-    http_latency_s=0.1,
-    registration_ok=True,
-    compliance_ok=True,
+    http_latency_s=0.0,
     history=deque(recent_reports, maxlen=60)
 )
 
@@ -331,88 +329,41 @@ The scoring system integrates with your validator's main loop:
 
 ```python
 async def validator_cycle():
+    score_cache: Dict[str, int] = {}
+
     for server_id in active_servers:
-        # 1. Fetch latest report
-        report = await fetch_latest_report(server_id)
-        
-        # 2. Verify integrity
-        integrity_ok = verify_report_integrity(report)
-        
-        # 3. Build context
+        status, reports = collector_api.get_server_reports(server_id, limit=25)
+        if status != 200 or not reports:
+            continue
+
+        parsed = [ServerReport.from_dict(r) for r in reports]
+        history = deque(reversed(parsed), maxlen=60)
+        latest = parsed[0]
+
         context = MinerContext(
-            report=report,
-            http_latency_s=measure_latency(),
-            registration_ok=is_registered(server_id),
-            compliance_ok=integrity_ok,
-            history=load_history(server_id)
+            report=latest,
+            http_latency_s=0.0,
+            history=history,
         )
-        
-        # 4. Calculate score
+
         score, components = calculate_miner_score(context)
-        
-        # 5. Apply smoothing
-        previous_score = storage.get_score(server_id)
-        smoothed_score = apply_score_smoothing(score, previous_score)
-        
-        # 6. Store results
-        storage.upsert_score(server_id, smoothed_score, 
-                           components['infrastructure'],
-                           components['participation'], 
-                           components['reliability'])
-        
-        # 7. Update weights on blockchain
-        hotkey = storage.get_server_hotkey(server_id)
-        if hotkey:
-            update_weight(hotkey, smoothed_score)
+        previous = score_cache.get(server_id)
+        smoothed = apply_score_smoothing(score, previous)
+        score_cache[server_id] = smoothed
+
+        hotkey = server_id_to_hotkey[server_id]
+        set_weight_on_chain(hotkey, smoothed / 1000.0)
 ```
 
 ## Monitoring & Analytics
 
-### Storage Schema
+Keep an eye on:
 
-```sql
--- Historical reports for trend analysis
-CREATE TABLE reports_by_server (
-    server_id TEXT NOT NULL,
-    ts INTEGER NOT NULL,
-    tps REAL NOT NULL,
-    uptime_ms INTEGER NOT NULL,
-    players INTEGER NOT NULL,
-    latency REAL NOT NULL,
-    comp INTEGER NOT NULL,
-    report_json TEXT NOT NULL,
-    PRIMARY KEY (server_id, ts)
-);
-
--- Current scores and components
-CREATE TABLE miner_scores (
-    server_id TEXT PRIMARY KEY,
-    score INTEGER NOT NULL,
-    infra REAL NOT NULL,
-    part REAL NOT NULL,
-    rely REAL NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
--- Server registration mapping
-CREATE TABLE server_registry (
-    server_id TEXT PRIMARY KEY,
-    hotkey TEXT NOT NULL,
-    registered_at INTEGER NOT NULL,
-    last_seen INTEGER NOT NULL,
-    status TEXT DEFAULT 'active'
-);
-```
-
-### Metrics Dashboard
-
-Key metrics to monitor:
-
-- **Score Distribution:** Histogram of all server scores
-- **Component Analysis:** Average infrastructure/participation/reliability
-- **Trend Analysis:** Score changes over time
-- **Health Indicators:** Servers with declining performance
-- **Network Stats:** Overall subnet health metrics
+- **Collector latency & status codes:** watch validator logs for API backoffs or rate-limit notices.
+- **Cached scores:** reported via `cached_scores` in status summaries; indicates active miners.
+- **Cached mappings:** ensures hotkey→server lookups remain healthy.
+- **Weight updates:** confirm regular blockchain commits without retries.
+- **Empty-report downgrades:** a warning log indicates scores drop to 0 when the collector returns no history.
 
 ## Testing
 
@@ -425,7 +376,6 @@ python -m pytest tests/test_scorer.py -v
 # Run specific test categories  
 python -m pytest tests/test_scorer.py::TestScoring -v
 python -m pytest tests/test_scorer.py::TestIntegrity -v
-python -m pytest tests/test_scorer.py::TestStorage -v
 ```
 
 ## Support
@@ -436,6 +386,6 @@ For issues or questions:
 2. **Use preview tool** for analysis
 3. **Review constants** with `--show-constants`
 4. **Verify integrity** checks are passing
-5. **Monitor storage** for data consistency
+5. **Monitor collector responses** for data consistency
 
 The scoring system is designed to be fair, transparent, and resistant to gaming while rewarding genuine high-quality Minecraft server operation.

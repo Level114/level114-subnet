@@ -102,7 +102,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 **Successful Initialization:**
 ```
 ✅ Level114 scoring system initialized successfully
-📊 Storage: /home/user/.level114/validator.db
+🌐 Collector API: collector.level114.io
 ⚖️ Weight update interval: 300s
 ```
 
@@ -124,7 +124,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 🔄 Cycles completed: 10
 ⚖️ Last weights update: Fri Sep 19 16:00:00 2025
 🗂️ Cached scores: 5
-💾 Storage: /home/user/.level114/validator.db
+📇 Cached mappings: 5
 ```
 
 ### Warning Signs
@@ -145,16 +145,15 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 ```
 ❌ Error in validation cycle: [details]
 ⚠️ Using basic fallback validation
+⚠️ Collector returned no reports for server ...; downgrading score to 0
 ```
 
-## 🗄️ Data Storage
+## 🧠 Data Handling
 
-The validator stores data in `~/.level114/validator.db` (SQLite):
-
-- **Server Reports**: Historical performance data (7 days)
-- **Scoring Results**: Calculated scores with component breakdowns
-- **Server Registry**: Mapping of hotkeys to server IDs
-- **Replay Protection**: Nonce/counter tracking for integrity
+- **Collector Center API** is the single source of truth for server reports and mappings.
+- **Runtime caches** store recent scores and hotkey→server mappings in memory only.
+- **Historical context** is pulled from the last 25 reports per server on every scoring cycle.
+- **Cache resets** happen automatically when the process restarts—no manual cleanup required.
 
 ## 🛠️ Troubleshooting
 
@@ -173,16 +172,7 @@ curl -H "Authorization: Bearer your_api_key" \
   http://collector.level114.io:3000/validators/health
 ```
 
-**3. Database Permissions**
-```bash
-# Check storage directory
-ls -la ~/.level114/
-# Fix permissions if needed
-chmod 755 ~/.level114/
-chmod 644 ~/.level114/validator.db
-```
-
-**4. Weight Setting Issues**
+**3. Weight Setting Issues**
 - Ensure your wallet has sufficient TAO for transaction fees
 - Check you're registered on the correct subnet (netuid 114)
 - Verify your hotkey has validator permissions
@@ -198,10 +188,11 @@ Enable detailed logging:
 
 ### Recovery
 
-**Reset scoring data:**
+**Refresh caches:**
 ```bash
-rm ~/.level114/validator.db
-# Validator will recreate on next startup
+# Restart validator to clear in-memory caches and pull fresh data
+pkill -f neurons/validator.py
+./scripts/run_validator.sh [...]
 ```
 
 **Force immediate weight update:**
@@ -273,7 +264,7 @@ Your validator is working well when you see:
 ✅ Regular weight updates every 5 minutes  
 ✅ Growing number of cached scores  
 ✅ Stable API connectivity  
-✅ Increasing storage with historical data  
+✅ Collector history available for each active miner  
 ✅ Balanced score distribution across miners  
 
 **The Level114 validator will now automatically reward high-performing Minecraft servers and penalize poor performance, creating strong incentives for infrastructure optimization! 🎮⚖️**

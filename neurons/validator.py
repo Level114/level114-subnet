@@ -22,8 +22,6 @@ from level114.utils.uids import sequential_select_untrusted
 
 from level114.base.validator import BaseValidatorNeuron
 from level114.validator.runner import Level114ValidatorRunner
-from level114.validator.storage import get_storage
-
 
 MIN_VALIDATION_INTERVAL = 70  # seconds
 
@@ -46,9 +44,6 @@ class Validator(BaseValidatorNeuron):
         # Initialize Level114 scoring system
         bt.logging.info("Initializing Level114 scoring system...")
         try:
-            # Initialize storage for scoring system
-            self.storage = get_storage()
-            
             # Initialize the comprehensive validator runner
             self.scoring_runner = Level114ValidatorRunner(
                 config=self.config,
@@ -56,11 +51,9 @@ class Validator(BaseValidatorNeuron):
                 metagraph=self.metagraph,
                 wallet=self.wallet,
                 collector_api=self.collector_api,
-                storage=self.storage
             )
             
             bt.logging.success("✅ Level114 scoring system initialized successfully")
-            bt.logging.info(f"📊 Storage: {self.storage.db_path}")
             bt.logging.info(f"⚖️  Weight update interval: {getattr(self.config.validator, 'weight_update_interval', 300)}s")
             
         except Exception as e:
@@ -76,7 +69,7 @@ class Validator(BaseValidatorNeuron):
         2. Verifies report integrity (hash/signature validation)
         3. Calculates comprehensive scores (infrastructure, participation, reliability)
         4. Updates Bittensor weights based on server performance
-        5. Persists scoring history and analytics
+        5. Pulls historical context from the collector
         """
         try:
             # Check if enough time has passed since last validation
@@ -157,20 +150,23 @@ class Validator(BaseValidatorNeuron):
             # Initialize score updates
             score_updates = {}
             
-            # Get scores from our storage for each active server
+            # Get scores from cached collector data for each active server
             for hotkey in self.metagraph.hotkeys:
                 if hotkey in hotkey_to_uid:
                     uid = hotkey_to_uid[hotkey]
                     
-                    # Try to get server ID for this hotkey
-                    server_id = self.storage.get_hotkey_server(hotkey)
-                    if server_id:
-                        # Get latest score
-                        score_data = self.storage.get_score(server_id)
-                        if score_data:
-                            # Convert our 0-1000 score to 0-1 range for legacy system
-                            normalized_score = score_data['score'] / 1000.0
-                            score_updates[uid] = normalized_score
+                    # Try to get server ID and cached score for this hotkey
+                    server_id = self.scoring_runner.get_server_id_for_hotkey(hotkey)
+                    if not server_id:
+                        continue
+
+                    score_entry = self.scoring_runner.get_cached_score(server_id)
+                    if not score_entry:
+                        continue
+
+                    # Convert our 0-1000 score to 0-1 range for legacy system
+                    normalized_score = score_entry.score / 1000.0
+                    score_updates[uid] = normalized_score
             
             # Update scores if we have any
             if score_updates:
@@ -194,7 +190,7 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info(f"🔄 Cycles completed: {status['cycle_count']}")
             bt.logging.info(f"⚖️  Last weights update: {time.ctime(status['last_weights_update']) if status['last_weights_update'] else 'Never'}")
             bt.logging.info(f"🗂️  Cached scores: {status['cached_scores']}")
-            bt.logging.info(f"💾 Storage: {status['storage_path']}")
+            bt.logging.info(f"📇 Cached mappings: {status['cached_mappings']}")
             bt.logging.info(f"🔒 Replay protection: {'Active' if status['replay_protection_active'] else 'Inactive'}")
             
             # Network info

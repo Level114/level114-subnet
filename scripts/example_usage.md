@@ -193,7 +193,7 @@ python neurons/validator.py \
 
 4. **Automatic Weight Setting**: Converts scores to Bittensor weights and updates blockchain every 5 minutes
 
-5. **Data Persistence**: Maintains historical scoring data and analytics in SQLite database
+5. **Collector-Centric**: Reads historical scoring context directly from the Collector Center API
 
 ### Expected Output:
 
@@ -201,7 +201,7 @@ python neurons/validator.py \
 🚀 Starting Level114 Validator...
 
 ✅ Level114 scoring system initialized successfully
-📊 Storage: /home/user/.level114/validator.db
+🌐 Collector API: collector.level114.io
 ⚖️  Weight update interval: 300s
 
 🔄 Starting Level114 validation cycle...
@@ -310,7 +310,7 @@ python neurons/validator.py \
 **"❌ Failed to initialize scoring system"**
 - Check that all required dependencies are installed: `pip install -r requirements.txt`
 - Verify your Python version is 3.8+
-- Ensure sufficient disk space for SQLite database
+- Confirm the collector URL and API key are provided and reachable
 
 **"⚠️ Collector API status 401 (Unauthorized)"**
 - Your API key is invalid or expired
@@ -321,6 +321,11 @@ python neurons/validator.py \
 - Temporary collector service issue
 - The validator will retry automatically
 - Check the collector service status or contact support if persistent
+
+**"⚠️ Collector returned no reports ...; downgrading score to 0"**
+- The collector removed historical reports for that server
+- Validator immediately drops the on-chain weight contribution to 0
+- Ensure miners continue reporting to restore their score
 
 **"⚠️ Using basic fallback validation"**
 - The advanced scoring system encountered an error
@@ -422,7 +427,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ✅ **Regular weight updates** every 5 minutes  
 ✅ **Growing number of cached scores**  
 ✅ **Stable API connectivity** (200 status codes)  
-✅ **Increasing storage** with historical data  
+✅ **Collector history** available for each active server  
 ✅ **Balanced score distribution** across miners  
 
 ### Status Summary (every 10 cycles):
@@ -431,7 +436,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 🔄 Cycles completed: 25
 ⚖️  Last weights update: Fri Sep 19 16:00:00 2025
 🗂️  Cached scores: 8
-💾 Storage: /home/user/.level114/validator.db
+📇 Cached mappings: 8
 🌐 Network: finney
 🔢 Subnet: 114
 👥 Metagraph size: 50
@@ -442,7 +447,6 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 - **Validation cycles**: 70-120 seconds each
 - **Weight updates**: Every 5 minutes (300s)
 - **API latency**: <500ms average
-- **Storage growth**: ~1MB per day
 - **Memory usage**: 200-500MB
 - **CPU usage**: 5-15% average
 

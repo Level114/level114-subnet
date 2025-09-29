@@ -9,7 +9,8 @@ import asyncio
 import time
 import traceback
 import math
-from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple, List
 from collections import deque
 import bittensor as bt
 import numpy as np
@@ -17,11 +18,21 @@ import numpy as np
 from .scoring import (
     ServerReport, MinerContext, calculate_miner_score,
     apply_score_smoothing,
-    DEBUG_SCORING
+    DEBUG_SCORING,
+    MAX_REPORT_HISTORY,
 )
-from .storage import ValidatorStorage, get_storage
 from ..api.collector_center_api import CollectorCenterAPI
 from ..base.utils.weight_utils import process_weights_for_netuid
+
+
+@dataclass
+class ScoreCacheEntry:
+    """In-memory score cache entry."""
+
+    score: int
+    raw_score: int
+    components: Dict[str, float]
+    updated_at: float
 
 
 class Level114ValidatorRunner:
@@ -36,7 +47,6 @@ class Level114ValidatorRunner:
         metagraph,
         wallet,
         collector_api: CollectorCenterAPI,
-        storage: Optional[ValidatorStorage] = None
     ):
         """
         Initialize validator runner
@@ -47,19 +57,23 @@ class Level114ValidatorRunner:
             metagraph: Network metagraph
             wallet: Validator wallet
             collector_api: Collector Center API client
-            storage: Storage instance (optional, will create default)
         """
         self.config = config
         self.subtensor = subtensor
         self.metagraph = metagraph
         self.wallet = wallet
         self.collector_api = collector_api
-        self.storage = storage or get_storage()
-        
+
         # Scoring state
         self.replay_protection = None
         self.last_weights_update = 0
-        self.score_cache = {}  # server_id -> (score, timestamp)
+        self.score_cache: Dict[str, ScoreCacheEntry] = {}
+        self.hotkey_to_server_id: Dict[str, str] = {}
+        self.server_id_to_hotkey: Dict[str, str] = {}
+        self.server_ids_last_fetch: float = 0.0
+        # Rate limit: /servers/ids endpoint allows 5 req/min (~12s interval)
+        self.server_ids_min_refresh_interval: float = 12.5
+        self.report_fetch_limit: int = 25
         self.last_weight_update_attempt = 0
         self.next_weight_update_time = 0
         self._last_committed_weights = None
@@ -181,129 +195,184 @@ class Level114ValidatorRunner:
     async def _get_server_mappings(self, hotkeys: List[str]) -> Dict[str, str]:
         """
         Get mapping of hotkeys to server IDs
-        
+
         Args:
             hotkeys: List of hotkeys to look up
-            
+
         Returns:
             Dictionary mapping hotkey -> server_id
         """
-        mappings = {}
-        
-        try:
-            # Try collector API first
-            status, server_list = self.collector_api.get_validator_server_ids(hotkeys)
-            
-            collector_hotkeys = set()
+        mappings: Dict[str, str] = {}
 
-            if status == 200 and server_list:
+        if not hotkeys:
+            return mappings
+
+        now = time.time()
+        should_refresh = (
+            not self.hotkey_to_server_id
+            or (now - self.server_ids_last_fetch) >= self.server_ids_min_refresh_interval
+        )
+
+        # Use cached entries while deciding whether to refresh
+        for hotkey in hotkeys:
+            server_id = self.hotkey_to_server_id.get(hotkey)
+            if server_id:
+                mappings[hotkey] = server_id
+
+        missing_hotkeys = [hk for hk in hotkeys if hk not in mappings]
+        if missing_hotkeys:
+            # Force refresh if we are missing entries for requested hotkeys
+            should_refresh = True
+
+        if not should_refresh:
+            return mappings
+
+        try:
+            status, server_list = self.collector_api.get_validator_server_ids(hotkeys)
+
+            if 200 <= status < 300 and server_list:
+                response_hotkeys = set()
                 for server_info in server_list:
                     hotkey = server_info.hotkey
                     server_id = server_info.id
-                    mappings[hotkey] = server_id
-                    collector_hotkeys.add(hotkey)
-                    
-                    # Update local registry
-                    self.storage.register_server(
-                        server_id, 
-                        hotkey,
-                        int(time.time() * 1000)
-                    )
-            
-            if status == 200:
-                # Mark hotkeys missing from collector as inactive locally
-                for hotkey in hotkeys:
-                    if hotkey in collector_hotkeys:
+                    if not hotkey or not server_id:
                         continue
 
-                    server_id = self.storage.get_hotkey_server(hotkey)
+                    mappings[hotkey] = server_id
+                    self.hotkey_to_server_id[hotkey] = server_id
+                    self.server_id_to_hotkey[server_id] = hotkey
+                    response_hotkeys.add(hotkey)
+
+                active_hotkeys = set(hotkeys)
+                stale_hotkeys = [
+                    hk for hk in active_hotkeys
+                    if hk not in response_hotkeys and hk in self.hotkey_to_server_id
+                ]
+
+                for hotkey in stale_hotkeys:
+                    server_id = self.hotkey_to_server_id.pop(hotkey, None)
                     if server_id:
-                        bt.logging.debug(
-                            f"Collector missing server mapping for hotkey {hotkey}, marking server {server_id} as missing"
-                        )
-                        self.storage.deactivate_server(server_id, status='missing')
+                        self.server_id_to_hotkey.pop(server_id, None)
                         self.score_cache.pop(server_id, None)
 
+                self.server_ids_last_fetch = now
+                bt.logging.info(f"Found {len(mappings)} server mappings from collector")
+
             else:
-                # Collector unavailable, fall back to cached mappings
-                for hotkey in hotkeys:
-                    if hotkey not in mappings:
-                        server_id = self.storage.get_hotkey_server(hotkey)
-                        if server_id:
-                            mappings[hotkey] = server_id
-            
-            bt.logging.info(f"Found {len(mappings)} server mappings")
-            
+                bt.logging.error(
+                    f"Collector server ID lookup failed with status {status}; using cached mappings"
+                )
+                # Fall back to cached data if available
+                mappings = {
+                    hotkey: self.hotkey_to_server_id[hotkey]
+                    for hotkey in hotkeys
+                    if hotkey in self.hotkey_to_server_id
+                }
+
         except Exception as e:
             bt.logging.error(f"Error getting server mappings: {e}")
-        
+            mappings = {
+                hotkey: self.hotkey_to_server_id[hotkey]
+                for hotkey in hotkeys
+                if hotkey in self.hotkey_to_server_id
+            }
+
         return mappings
     
     async def _score_server(self, server_id: str) -> Optional[Dict[str, any]]:
         """
         Score a single server
-        
+
         Args:
             server_id: Server to score
-            
+
         Returns:
             Scoring result dictionary or None
         """
+        if not server_id:
+            return None
+
         try:
-            # 1. Fetch latest report from collector
-            # Fetch latest report from collector (do not use HTTP latency in scoring)
-            status, reports = self.collector_api.get_server_reports(server_id, limit=1)
-            
-            if status != 200 or not reports:
-                bt.logging.debug(f"No reports for server {server_id}")
+            status, reports = self.collector_api.get_server_reports(
+                server_id,
+                limit=self.report_fetch_limit,
+            )
+
+            if status != 200:
+                bt.logging.debug(
+                    f"Collector returned status {status} for server {server_id}; reports={len(reports)}"
+                )
+
+            if not reports:
+                previous_entry = self.score_cache.get(server_id)
+                if previous_entry and previous_entry.score > 0:
+                    bt.logging.warning(
+                        f"Collector returned no reports for server {server_id}; downgrading score to 0"
+                    )
+                    zero_components = {
+                        'infrastructure': 0.0,
+                        'participation': 0.0,
+                        'reliability': 0.0,
+                    }
+                    zero_entry = ScoreCacheEntry(
+                        score=0,
+                        raw_score=0,
+                        components=zero_components,
+                        updated_at=time.time(),
+                    )
+                    self.score_cache[server_id] = zero_entry
+
+                    return {
+                        'server_id': server_id,
+                        'score': 0,
+                        'raw_score': 0,
+                        'components': zero_components,
+                        'latency': 0.0,
+                        'compliance': False,
+                        'reports_count': 0,
+                    }
+
+                bt.logging.debug(f"No reports available for server {server_id}")
                 return None
-            
-            # 2. Parse report
-            latest_report = ServerReport.from_dict(reports[0])
-            
-            # 3. Load historical context
-            history = self.storage.load_history(server_id, max_rows=60)
-            
-            # 4. Create scoring context (no registration/integrity/latency effects)
+
+            parsed_reports: List[ServerReport] = []
+            for report_dict in reports:
+                try:
+                    parsed_reports.append(ServerReport.from_dict(report_dict))
+                except Exception as parse_err:
+                    bt.logging.debug(f"Failed to parse report for server {server_id}: {parse_err}")
+
+            if not parsed_reports:
+                bt.logging.debug(f"No valid reports parsed for server {server_id}")
+                return None
+
+            latest_report = parsed_reports[0]
+            history = deque(reversed(parsed_reports), maxlen=MAX_REPORT_HISTORY)
+
             context = MinerContext(
                 report=latest_report,
                 http_latency_s=0.0,
-                history=history
+                history=history,
             )
-            
-            # 5. Calculate score
+
             new_score, components = calculate_miner_score(context)
-            
-            # 6. Apply smoothing
-            previous_score_data = self.storage.get_score(server_id)
-            previous_score = previous_score_data['score'] if previous_score_data else None
-            
+
+            previous_entry = self.score_cache.get(server_id)
+            previous_score = previous_entry.score if previous_entry else None
             smoothed_score = apply_score_smoothing(new_score, previous_score)
-            
-            # 7. Store results
-            self.storage.append_report(
-                server_id,
-                latest_report, 
-                latency=0.0,
-                compliance=True
+
+            self.score_cache[server_id] = ScoreCacheEntry(
+                score=smoothed_score,
+                raw_score=new_score,
+                components=components,
+                updated_at=time.time(),
             )
-            
-            self.storage.upsert_score(
-                server_id,
-                smoothed_score,
-                components['infrastructure'],
-                components['participation'],
-                components['reliability']
-            )
-            
-            # 8. Cache for weight updates
-            self.score_cache[server_id] = (smoothed_score, time.time())
-            
+
             if DEBUG_SCORING:
                 bt.logging.debug(
-                    f"Scored server {server_id}: {smoothed_score} (raw: {new_score})"
+                    f"Scored server {server_id}: {smoothed_score} (raw: {new_score}) using {len(history)} reports"
                 )
-            
+
             return {
                 'server_id': server_id,
                 'score': smoothed_score,
@@ -311,9 +380,9 @@ class Level114ValidatorRunner:
                 'components': components,
                 'latency': 0.0,
                 'compliance': True,
-                'reports_count': len(history)
+                'reports_count': len(history),
             }
-            
+
         except Exception as e:
             bt.logging.error(f"Error scoring server {server_id}: {e}")
             if DEBUG_SCORING:
@@ -428,24 +497,23 @@ class Level114ValidatorRunner:
             raise
 
     def _cleanup_old_data(self):
-        """Clean up old data to prevent database bloat"""
+        """Clean up cached data to prevent memory growth"""
         try:
             bt.logging.info("🧹 Cleaning up old data...")
             
-            # Clean up storage
-            self.storage.cleanup_old_data(max_age_days=7)
-            
             # Clean up replay protection
-            self.replay_protection.cleanup_old_entries(max_age_hours=168)
+            if self.replay_protection:
+                self.replay_protection.cleanup_old_entries(max_age_hours=168)
             
             # Clear old score cache
             current_time = time.time()
             old_keys = [
-                server_id for server_id, (score, timestamp) in self.score_cache.items()
-                if current_time - timestamp > 3600  # 1 hour
+                server_id
+                for server_id, entry in self.score_cache.items()
+                if current_time - entry.updated_at > 3600  # 1 hour
             ]
             for key in old_keys:
-                del self.score_cache[key]
+                self.score_cache.pop(key, None)
             
             bt.logging.info("✅ Cleanup complete")
             
@@ -460,14 +528,22 @@ class Level114ValidatorRunner:
             'next_weight_update': self.next_weight_update_time,
             'last_weight_attempt': self.last_weight_update_attempt,
             'cached_scores': len(self.score_cache),
-            'storage_path': self.storage.db_path,
-            'replay_protection_active': True,
+            'cached_mappings': len(self.hotkey_to_server_id),
+            'replay_protection_active': bool(self.replay_protection),
             'config': {
                 'netuid': self.config.netuid,
                 'weight_update_interval': self.weight_update_interval,
                 'weight_retry_interval': self.weight_retry_interval
             }
         }
+
+    def get_server_id_for_hotkey(self, hotkey: str) -> Optional[str]:
+        """Helper to retrieve cached server ID for a given hotkey."""
+        return self.hotkey_to_server_id.get(hotkey)
+
+    def get_cached_score(self, server_id: str) -> Optional[ScoreCacheEntry]:
+        """Helper to retrieve cached score entry for a server."""
+        return self.score_cache.get(server_id)
 
 
 # Integration with existing validator base class
@@ -490,10 +566,7 @@ async def integrate_scoring_system(validator_instance):
             api_key=collector_config.api_key,
             timeout_seconds=getattr(collector_config, 'timeout', 30.0)
         )
-        
-        # Initialize storage
-        storage = get_storage()
-        
+
         # Create runner
         runner = Level114ValidatorRunner(
             config=validator_instance.config,
@@ -501,7 +574,6 @@ async def integrate_scoring_system(validator_instance):
             metagraph=validator_instance.metagraph,
             wallet=validator_instance.wallet,
             collector_api=collector_api,
-            storage=storage
         )
         
         # Add to validator instance
@@ -554,23 +626,3 @@ async def enhanced_validator_loop(validator_instance):
     except Exception as e:
         bt.logging.error(f"Fatal error in validator: {e}")
         raise
-
-
-# TODO: Integration hooks for existing validator
-"""
-To integrate with your existing validator, add these calls to your main validator loop:
-
-1. In __init__():
-   self.scoring_runner = await integrate_scoring_system(self)
-
-2. In your main loop:
-   cycle_stats = await self.scoring_runner.run_scoring_cycle()
-
-3. Replace weight setting with:
-   # Weights are automatically set by the scoring runner
-   # based on server performance scores
-
-4. Optional: Add status endpoint:
-   def get_scoring_status(self):
-       return self.scoring_runner.get_status()
-"""
