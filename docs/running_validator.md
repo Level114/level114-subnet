@@ -146,6 +146,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 ❌ Error in validation cycle: [details]
 ⚠️ Using basic fallback validation
 ⚠️ Collector returned no reports for server ...; downgrading score to 0
+⚠️ Collector reports for server ... are older than 6h; downgrading score to 0
 ```
 
 ## 🧠 Data Handling

@@ -364,6 +364,7 @@ Keep an eye on:
 - **Cached mappings:** ensures hotkey→server lookups remain healthy.
 - **Weight updates:** confirm regular blockchain commits without retries.
 - **Empty-report downgrades:** a warning log indicates scores drop to 0 when the collector returns no history.
+- **Stale-report downgrades:** reports older than 6h are ignored; if all are stale, the score resets to 0.
 
 ## Testing
 

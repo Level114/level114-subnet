@@ -346,8 +346,48 @@ class Level114ValidatorRunner:
                 bt.logging.debug(f"No valid reports parsed for server {server_id}")
                 return None
 
-            latest_report = parsed_reports[0]
-            history = deque(reversed(parsed_reports), maxlen=MAX_REPORT_HISTORY)
+            now_ms = int(time.time() * 1000)
+            max_age_ms = int(6 * 3600 * 1000)  # 6 hours
+
+            fresh_reports: List[ServerReport] = [
+                report for report in parsed_reports
+                if (now_ms - report.client_timestamp_ms) <= max_age_ms
+            ]
+
+            if not fresh_reports:
+                bt.logging.warning(
+                    f"Collector reports for server {server_id} are older than 6h; downgrading score to 0"
+                )
+                zero_components = {
+                    'infrastructure': 0.0,
+                    'participation': 0.0,
+                    'reliability': 0.0,
+                }
+                zero_entry = ScoreCacheEntry(
+                    score=0,
+                    raw_score=0,
+                    components=zero_components,
+                    updated_at=time.time(),
+                )
+                self.score_cache[server_id] = zero_entry
+
+                return {
+                    'server_id': server_id,
+                    'score': 0,
+                    'raw_score': 0,
+                    'components': zero_components,
+                    'latency': 0.0,
+                    'compliance': False,
+                    'reports_count': 0,
+                }
+
+            if len(fresh_reports) < len(parsed_reports):
+                bt.logging.debug(
+                    f"Filtered {len(parsed_reports) - len(fresh_reports)} stale reports for server {server_id}"
+                )
+
+            latest_report = fresh_reports[0]
+            history = deque(reversed(fresh_reports), maxlen=MAX_REPORT_HISTORY)
 
             context = MinerContext(
                 report=latest_report,

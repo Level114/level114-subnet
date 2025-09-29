@@ -327,6 +327,11 @@ python neurons/validator.py \
 - Validator immediately drops the on-chain weight contribution to 0
 - Ensure miners continue reporting to restore their score
 
+**"⚠️ Collector reports for server ... are older than 6h; downgrading score to 0"**
+- All available reports exceeded the 6h freshness window
+- Scores are forced to 0 until new, recent reports arrive
+- Check the miner’s reporting schedule and collector health
+
 **"⚠️ Using basic fallback validation"**
 - The advanced scoring system encountered an error
 - Check logs for specific error details
