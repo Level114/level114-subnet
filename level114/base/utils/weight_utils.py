@@ -177,40 +177,39 @@ def process_weights_for_netuid(
     bittensor.logging.debug("min_allowed_weights", min_allowed_weights)
     bittensor.logging.debug("max_weight_limit", max_weight_limit)
 
+    # Fallback helper: assign full weight to UID 0 (owner) when no miners have
+    # positive scores.
+    def _fallback_owner_only_weights() -> Tuple[np.ndarray, np.ndarray]:
+        metagraph_n = int(metagraph.n.item() if hasattr(metagraph.n, "item") else metagraph.n)
+        if metagraph_n <= 0:
+            empty = np.zeros(0, dtype=np.float32)
+            return empty, empty
+
+        fallback_weights = np.zeros(metagraph_n, dtype=np.float32)
+        owner_uid = 0
+        if owner_uid < metagraph_n:
+            fallback_weights[owner_uid] = 1.0
+
+        final_uids_local = np.arange(len(fallback_weights))
+        _log_emitted_weights(final_uids_local, fallback_weights)
+        return final_uids_local, fallback_weights
+
     # Find all non zero weights.
     non_zero_weight_idx = np.argwhere(weights > 0).squeeze()
     non_zero_weight_idx = np.atleast_1d(non_zero_weight_idx)
     non_zero_weight_uids = uids[non_zero_weight_idx]
     non_zero_weights = weights[non_zero_weight_idx]
     if non_zero_weights.size == 0 or metagraph.n < min_allowed_weights:
-        bittensor.logging.warning("No non-zero weights returning all ones.")
-        final_weights = np.ones(metagraph.n, dtype=np.float32)
-        bittensor.logging.debug("final_weights_raw", final_weights)
-        final_uids = np.arange(len(final_weights))
-        _log_emitted_weights(final_uids, final_weights)
-        return final_uids, final_weights
+        bittensor.logging.warning(
+            "No non-zero weights available; falling back to owner-only weight."
+        )
+        return _fallback_owner_only_weights()
 
     elif non_zero_weights.size < min_allowed_weights:
         bittensor.logging.warning(
-            "No non-zero weights less then min allowed weight, returning all ones."
+            "Insufficient non-zero weights; falling back to owner-only weight."
         )
-        # Ensure minimum number of non-zero weights without altering existing non-zero values.
-        weights = np.zeros(metagraph.n, dtype=np.float32)
-        # Set existing non-zero weights exactly as provided
-        weights[non_zero_weight_idx] = non_zero_weights.astype(np.float32)
-        # Add small epsilon weights to additional UIDs to meet min_allowed_weights
-        needed = int(min_allowed_weights - non_zero_weights.size)
-        if needed > 0:
-            epsilon = 1e-5
-            all_uids = np.arange(metagraph.n)
-            mask = np.ones(metagraph.n, dtype=bool)
-            mask[non_zero_weight_idx] = False
-            candidate_uids = all_uids[mask][:needed]
-            weights[candidate_uids] = epsilon
-        bittensor.logging.debug("final_weights_raw", weights)
-        final_uids = np.arange(len(weights))
-        _log_emitted_weights(final_uids, weights)
-        return final_uids, weights
+        return _fallback_owner_only_weights()
 
     bittensor.logging.debug("non_zero_weights", non_zero_weights)
 

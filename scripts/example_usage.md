@@ -21,32 +21,28 @@ Your Minecraft server must have these plugins installed:
 
 ```bash
 # Run the interactive registration script
-./scripts/run_miner.sh
+./scripts/register_miner.sh
 
 # It will ask you for:
-# - Collector-center-main IP address  
-# - Minecraft server IP and port
+# - Minecraft server hostname and port
 # - Bittensor wallet name and hotkey
 ```
 
 #### Non-Interactive Mode:
 
 ```bash
-# Register with specific collector IP
-./scripts/run_miner.sh \
+# Register your server with a hostname
+./scripts/register_miner.sh \
     --non-interactive \
-    --collector_ip 192.168.1.100 \
-    --minecraft_ip YOUR_MINECRAFT_SERVER_IP \
+    --minecraft_hostname play.example.com \
     --wallet.name mywallet \
     --wallet.hotkey myhotkey
 
-# With custom ports
-./scripts/run_miner.sh \
+# With a custom Minecraft port
+./scripts/register_miner.sh \
     --non-interactive \
-    --collector_ip collector.level114.io \
-    --collector_port 3000 \
-    --minecraft_ip YOUR_MINECRAFT_SERVER_IP \
-    --minecraft_port 25565 \
+    --minecraft_hostname play.example.com \
+    --minecraft_port 25566 \
     --wallet.name mywallet \
     --wallet.hotkey myhotkey
 ```
@@ -55,10 +51,10 @@ Your Minecraft server must have these plugins installed:
 
 ```bash
 python neurons/miner.py \
-    --collector_url http://collector.level114.io:3000 \
-    --minecraft_ip YOUR_MINECRAFT_SERVER_IP \
+    --minecraft_hostname play.example.com \
     --wallet.name mywallet \
     --wallet.hotkey myhotkey \
+    --action register \
     --netuid 114 \
     --subtensor.network finney
 ```
@@ -77,8 +73,8 @@ python neurons/miner.py \
 
 📋 Configuration:
   - Bittensor Wallet: mywallet.myhotkey
-  - Collector-Center: http://192.168.1.100:3000
-  - Minecraft Server: 203.0.113.1:25565
+  - Collector-Center: https://collector.level114.io
+  - Minecraft Server: play.example.com:25565
 
 🔄 What the registration will do:
   1. Connect your Minecraft server to the Level114 subnet
@@ -96,7 +92,7 @@ python neurons/miner.py \
 2025-09-19 16:00:00.000 | INFO     | Registering with collector-center-main...
 2025-09-19 16:00:01.000 | SUCCESS  | ✅ Successfully registered with collector!
 2025-09-19 16:00:01.000 | INFO     | Server ID: dd227594-2632-4d3e-9396-46f131e47712
-2025-09-19 16:00:01.000 | INFO     | Public IP: 203.0.113.1
+2025-09-19 16:00:01.000 | INFO     | Hostname: play.example.com
 2025-09-19 16:00:01.000 | INFO     | Port: 25565
 2025-09-19 16:00:01.000 | SUCCESS  | 🎯 Miner registration completed successfully!
 2025-09-19 16:00:01.000 | INFO     | Your server is now part of the Level114 subnet!
@@ -262,18 +258,13 @@ python neurons/validator.py \
 - The script should be in the `scripts/` directory of the Level114 project
 - Check that `neurons/miner.py` exists in the project root
 
-**"❌ Error: Collector IP is required"**
-- You must provide the IP address of the collector-center-main server
-- In interactive mode, you'll be prompted for this
-- In non-interactive mode, use `--collector_ip YOUR_IP`
-
-**"❌ Error: Minecraft server IP is required"**
-- You must specify your Minecraft server's IP address
-- Use your server's public IP if validators need to connect remotely
-- Use `--minecraft_ip YOUR_SERVER_IP`
+**"❌ Error: Minecraft server hostname is required"**
+- Provide the hostname your players use to connect (e.g., play.example.com)
+- In interactive mode, ensure you enter a non-empty value when prompted
+- In non-interactive mode, use `--minecraft_hostname YOUR_SERVER_HOSTNAME`
 
 **"Failed to register with collector"**
-- Check that the collector IP is correct and reachable
+- Check that the collector endpoint is reachable (DNS, firewall, connectivity)
 - Verify the collector service is running on the specified port (default: 3000)
 - Check firewall settings on both collector and miner machines
 - Ensure your Bittensor wallet is properly configured
@@ -283,11 +274,6 @@ python neurons/validator.py \
 - Download plugins from the Level114 repository
 - Restart your Minecraft server after installing plugins
 - Check plugin compatibility with your Minecraft version
-
-**"Could not determine public IP address"**
-- Check your internet connection
-- The miner needs to determine its public IP for registration
-- Ensure your server can make outbound HTTP requests
 
 **"Wallet not registered on subnet 114"**
 - Register your miner wallet on subnet 114 first

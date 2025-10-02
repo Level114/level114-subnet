@@ -95,11 +95,16 @@ cp config.env.example .env
 
 ### Running a Miner
 
-**Important**: The miner can be run on any server and connects to the collector-center-main service remotely. You must provide the IP address of the collector server.
+**Important**: The miner registers or unregisters your Minecraft server with the collector-center-main service. The convenience scripts use the hosted collector at `https://collector.level114.io` by default.
 
-Using the convenience script (recommended):
+Registering via convenience script (recommended):
 ```bash
-./scripts/run_miner.sh --collector_ip COLLECTOR_SERVER_IP --wallet.name your_wallet --wallet.hotkey your_hotkey
+./scripts/register_miner.sh --minecraft_hostname play.example.com --wallet.name your_wallet --wallet.hotkey your_hotkey
+```
+
+Unregistering:
+```bash
+./scripts/unregister_miner.sh --minecraft_hostname play.example.com --wallet.name your_wallet --wallet.hotkey your_hotkey
 ```
 
 Direct python execution:
@@ -109,13 +114,19 @@ python neurons/miner.py \
     --subtensor.network finney \
     --wallet.name your_wallet \
     --wallet.hotkey your_hotkey \
-    --collector_url http://COLLECTOR_SERVER_IP:3000
+    --minecraft_hostname play.example.com \
+    --action register
 ```
 
-**What the miner does:**
+**What the register action does:**
 1. Registers once with the collector-center-main service
 2. Saves server credentials (Server ID, API Token) to local files
 3. Exits after successful registration - no background processes!
+
+**What the unregister action does:**
+1. Signs an unregister request for your hostname and port
+2. Notifies collector-center-main to remove the server from active evaluation
+3. Stops new validator scoring cycles for that server
 
 ### Running a Validator
 
@@ -136,8 +147,9 @@ python neurons/validator.py \
 ## Configuration Options
 
 ### Miner Options
-- `--collector_ip`: IP address of the collector-center-main server (REQUIRED)
-- `--collector_port`: Port of the collector-center-main server (default: 3000)
+- `--minecraft_hostname`: Hostname of your Minecraft server (required)
+- `--minecraft_port`: Minecraft server port (default: 25565)
+- `--action`: `register` (default) or `unregister`
 - `--wallet.name`: Your Bittensor wallet name (REQUIRED)
 - `--wallet.hotkey`: Your Bittensor wallet hotkey (REQUIRED)
 

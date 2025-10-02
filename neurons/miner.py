@@ -22,6 +22,9 @@ import bittensor as bt
 from typing import Optional
 
 
+DEFAULT_COLLECTOR_URL = "https://collector.level114.io"
+
+
 class MinecraftServerRegistration:
     """
     Simple Level114 miner that ONLY registers Minecraft server information 
@@ -39,16 +42,7 @@ class MinecraftServerRegistration:
             hotkey=config.wallet_hotkey,
             path=config.wallet_path
         )
-
-    def get_public_ip(self) -> str:
-        """Get public IP address of this server"""
-        try:
-            response = requests.get('https://api.ipify.org', timeout=10)
-            if response.status_code == 200:
-                return response.text.strip()
-        except Exception as e:
-            bt.logging.warning(f"Could not get public IP: {e}")
-        return None
+        self.collector_url = DEFAULT_COLLECTOR_URL
 
     def create_signature(self, message: str) -> str:
         """Create signature for message using wallet hotkey"""
@@ -74,81 +68,97 @@ class MinecraftServerRegistration:
             bt.logging.error(f"Hotkey: {self.wallet.hotkey.ss58_address}")
             raise
 
-    def register_minecraft_server(self) -> bool:
-        """Register Minecraft server with collector-center-main"""
+    def perform_minecraft_action(self) -> bool:
+        """Register or unregister Minecraft server with collector-center-main"""
         try:
-            bt.logging.info("🎮 Registering Minecraft server with collector-center-main...")
+            action = getattr(self.config, 'action', 'register').lower()
+            if action not in {'register', 'unregister'}:
+                bt.logging.error(f"Unsupported action: {action}")
+                return False
+
+            if action == 'register':
+                bt.logging.info("🎮 Registering Minecraft server with collector-center-main...")
+            else:
+                bt.logging.info("🎮 Unregistering Minecraft server from collector-center-main...")
             
-            # Get server IP
-            minecraft_ip = getattr(self.config, 'minecraft_ip', None) or self.get_public_ip()
+            # Get server details
             minecraft_hostname = getattr(self.config, 'minecraft_hostname', None)
             minecraft_port = getattr(self.config, 'minecraft_port', 25565)
-            
-            if not minecraft_ip:
-                bt.logging.error("Could not determine Minecraft server IP address")
+
+            if not minecraft_hostname:
+                bt.logging.error("Minecraft server hostname is required for registration")
                 return False
             
             # Create registration message (format expected by collector-center-main)
-            message = f"register:{minecraft_ip}:{minecraft_port}"
+            message_prefix = 'register' if action == 'register' else 'unregister'
+            message = f"{message_prefix}:{minecraft_hostname}:{minecraft_port}"
             signature = self.create_signature(message)
             
             # Prepare registration data (matching collector-center-main expected format)
             registration_data = {
-                "ip": minecraft_ip,
+                "hostname": minecraft_hostname,
                 "port": minecraft_port,
                 "hotkey": self.wallet.hotkey.ss58_address,
                 "signature": signature
             }
-            if minecraft_hostname:
-                registration_data["hostname"] = minecraft_hostname
             
             # Make registration request to collector
-            collector_url = getattr(self.config, 'collector_url', 'http://localhost:8000')
-            if minecraft_hostname:
-                bt.logging.info(f"Registering Minecraft server at {minecraft_hostname} ({minecraft_ip}):{minecraft_port}")
+            collector_url = self.collector_url
+            if action == 'register':
+                bt.logging.info(f"Registering Minecraft server at {minecraft_hostname}:{minecraft_port}")
             else:
-                bt.logging.info(f"Registering Minecraft server at {minecraft_ip}:{minecraft_port}")
+                bt.logging.info(f"Unregistering Minecraft server at {minecraft_hostname}:{minecraft_port}")
             bt.logging.info(f"Collector URL: {collector_url}")
             
+            endpoint = 'register' if action == 'register' else 'unregister'
             response = requests.post(
-                f"{collector_url}/servers/register",
+                f"{collector_url}/servers/{endpoint}",
                 json=registration_data,
                 timeout=30
             )
             
             if response.status_code == 200:
-                result = response.json()
-                server_id = result.get('server', {}).get('id', 'unknown')
-                api_token = result.get('credentials', {}).get('token', 'unknown')
-                key_id = result.get('server', {}).get('key_id', 'unknown')
-                
-                bt.logging.success(f"✅ Minecraft server registered successfully!")
-                bt.logging.info(f"🎯 Server ID: {server_id}")
-                bt.logging.info(f"🔑 API Token: {api_token[:20]}...")
-                if minecraft_hostname:
+                try:
+                    result = response.json()
+                except ValueError:
+                    result = {}
+
+                if action == 'register':
+                    server_id = result.get('server', {}).get('id', 'unknown')
+                    api_token = result.get('credentials', {}).get('token', 'unknown')
+                    key_id = result.get('server', {}).get('key_id', 'unknown')
+
+                    bt.logging.success("✅ Minecraft server registered successfully!")
+                    bt.logging.info(f"🎯 Server ID: {server_id}")
+                    bt.logging.info(f"🔑 API Token: {api_token[:20]}...")
                     bt.logging.info(f"🧭 Minecraft Hostname: {minecraft_hostname}")
-                bt.logging.info(f"🌍 Minecraft IP: {minecraft_ip}")
-                bt.logging.info(f"🚪 Minecraft Port: {minecraft_port}")
-                bt.logging.info(f"🔐 Hotkey: {self.wallet.hotkey.ss58_address}")
-                
-                # Save credentials to file
-                self._save_credentials(server_id, api_token, key_id, minecraft_ip, minecraft_port, minecraft_hostname)
-                
+                    bt.logging.info(f"🚪 Minecraft Port: {minecraft_port}")
+                    bt.logging.info(f"🔐 Hotkey: {self.wallet.hotkey.ss58_address}")
+
+                    self._save_credentials(server_id, api_token, key_id, minecraft_port, minecraft_hostname)
+                else:
+                    bt.logging.success("✅ Minecraft server unregistered successfully!")
+                    bt.logging.info(f"🧭 Minecraft Hostname: {minecraft_hostname}")
+                    bt.logging.info(f"🚪 Minecraft Port: {minecraft_port}")
+
                 return True
             else:
-                bt.logging.error(f"❌ Failed to register Minecraft server: {response.status_code}")
+                action_word = 'register' if action == 'register' else 'unregister'
+                bt.logging.error(f"❌ Failed to {action_word} Minecraft server: {response.status_code}")
                 bt.logging.error(f"Response: {response.text}")
                 return False
                 
         except Exception as e:
-            bt.logging.error(f"❌ Error registering Minecraft server: {e}")
+            action_word = 'register' if action == 'register' else 'unregister'
+            bt.logging.error(f"❌ Error trying to {action_word} Minecraft server: {e}")
             return False
 
-    def _save_credentials(self, server_id: str, api_token: str, key_id: str, minecraft_ip: str, minecraft_port: int, minecraft_hostname: Optional[str] = None):
+    def _save_credentials(self, server_id: str, api_token: str, key_id: str, minecraft_port: int, minecraft_hostname: Optional[str] = None):
         """Save server credentials to file"""
         try:
             import os
             from datetime import datetime
+            import re
             
             # Create credentials directory if it doesn't exist
             creds_dir = "credentials"
@@ -158,7 +168,9 @@ class MinecraftServerRegistration:
             # Create filename based on wallet and minecraft server
             wallet_name = getattr(self.config, 'wallet_name', 'unknown')
             hotkey_name = getattr(self.config, 'wallet_hotkey', 'unknown')
-            filename = f"{creds_dir}/minecraft_server_{wallet_name}_{hotkey_name}_{minecraft_ip.replace('.', '_')}.txt"
+            hostname_safe = minecraft_hostname or 'unknown'
+            hostname_safe = re.sub(r'[^A-Za-z0-9_\-]+', '_', hostname_safe)
+            filename = f"{creds_dir}/minecraft_server_{wallet_name}_{hotkey_name}_{hostname_safe}.txt"
             
             # Prepare credentials content
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -173,7 +185,6 @@ Server ID: {server_id}
 API Token: {api_token}
 Key ID: {key_id}
 Minecraft Hostname: {minecraft_hostname or ''}
-Minecraft IP: {minecraft_ip}
 Minecraft Port: {minecraft_port}
 
 [Wallet Information]
@@ -182,7 +193,7 @@ Hotkey Name: {hotkey_name}
 Hotkey Address: {self.wallet.hotkey.ss58_address}
 
 [Collector Information]
-Collector URL: {getattr(self.config, 'collector_url', 'unknown')}
+Collector URL: {self.collector_url}
 Registration Time: {timestamp}
 
 # How to use these credentials:
@@ -203,12 +214,11 @@ Registration Time: {timestamp}
                 "api_token": api_token,
                 "key_id": key_id,
                 "minecraft_hostname": minecraft_hostname,
-                "minecraft_ip": minecraft_ip,
                 "minecraft_port": minecraft_port,
                 "wallet_name": wallet_name,
                 "hotkey_name": hotkey_name,
                 "hotkey_address": self.wallet.hotkey.ss58_address,
-                "collector_url": getattr(self.config, 'collector_url', 'unknown'),
+                "collector_url": self.collector_url,
                 "registration_time": timestamp
             }
             
@@ -236,13 +246,10 @@ def main():
     parser.add_argument('--wallet.hotkey', dest='wallet_hotkey', type=str, required=True, help='Wallet hotkey')
     parser.add_argument('--wallet.path', dest='wallet_path', type=str, default='~/.bittensor/wallets/', help='Wallet path')
     
-    # Collector arguments
-    parser.add_argument('--collector_url', type=str, required=True, help='Collector center URL')
-    
     # Minecraft server arguments
-    parser.add_argument('--minecraft_ip', type=str, help='Minecraft server IP (auto-detected if not provided)')
-    parser.add_argument('--minecraft_hostname', type=str, help='Minecraft server hostname (e.g., play.myserver.com)')
+    parser.add_argument('--minecraft_hostname', type=str, required=True, help='Minecraft server hostname (e.g., play.myserver.com)')
     parser.add_argument('--minecraft_port', type=int, default=25565, help='Minecraft server port (default: 25565)')
+    parser.add_argument('--action', type=str, default='register', choices=['register', 'unregister'], help='Action to perform: register or unregister (default: register)')
     
     # Logging
     parser.add_argument('--logging.debug', action='store_true', dest='debug', help='Enable debug logging')
@@ -253,37 +260,53 @@ def main():
     if args.debug:
         bt.logging.set_debug(True)
     
-    bt.logging.info("🚀 Starting Level114 Minecraft Server Registration")
+    action = args.action.lower()
+    action_title = 'Registration' if action == 'register' else 'Unregistration'
+
+    bt.logging.info(f"🚀 Starting Level114 Minecraft Server {action_title}")
     bt.logging.info(f"Wallet: {args.wallet_name}.{args.wallet_hotkey}")
-    bt.logging.info(f"Collector: {args.collector_url}")
+    bt.logging.info(f"Collector: {DEFAULT_COLLECTOR_URL}")
     if getattr(args, 'minecraft_hostname', None):
         bt.logging.info(f"Hostname: {args.minecraft_hostname}")
-    
+
     try:
         # Create registration client
         registrar = MinecraftServerRegistration(args)
-        
+
         # Register Minecraft server
-        if registrar.register_minecraft_server():
-            bt.logging.success("🎉 Registration completed successfully!")
-            bt.logging.info("💡 Your Minecraft server is now registered with collector-center-main")
-            bt.logging.info("")
-            bt.logging.info("🔍 Check the 'credentials/' folder for your server credentials:")
-            bt.logging.info(f"   📁 credentials/minecraft_server_{args.wallet_name}_{args.wallet_hotkey}_*.txt")
-            bt.logging.info(f"   📁 credentials/minecraft_server_{args.wallet_name}_{args.wallet_hotkey}_*.json")
-            bt.logging.info("")
-            bt.logging.warning("⚠️  IMPORTANT: Keep the credentials files secure!")
-            bt.logging.warning("   They contain Server ID and API Token necessary for server management.")
+        if registrar.perform_minecraft_action():
+            if action == 'register':
+                bt.logging.success("🎉 Registration completed successfully!")
+                bt.logging.info("💡 Your Minecraft server is now registered with collector-center-main")
+                bt.logging.info("")
+                bt.logging.info("🔍 Check the 'credentials/' folder for your server credentials:")
+                bt.logging.info(f"   📁 credentials/minecraft_server_{args.wallet_name}_{args.wallet_hotkey}_*.txt")
+                bt.logging.info(f"   📁 credentials/minecraft_server_{args.wallet_name}_{args.wallet_hotkey}_*.json")
+                bt.logging.info("")
+                bt.logging.warning("⚠️  IMPORTANT: Keep the credentials files secure!")
+                bt.logging.warning("   They contain Server ID and API Token necessary for server management.")
+            else:
+                bt.logging.success("🎉 Unregistration completed successfully!")
+                bt.logging.info("💡 Your Minecraft server is no longer registered with collector-center-main")
             sys.exit(0)
         else:
-            bt.logging.error("❌ Registration failed!")
+            if action == 'register':
+                bt.logging.error("❌ Registration failed!")
+            else:
+                bt.logging.error("❌ Unregistration failed!")
             sys.exit(1)
-            
+
     except KeyboardInterrupt:
-        bt.logging.info("👋 Registration cancelled by user")
+        if action == 'register':
+            bt.logging.info("👋 Registration cancelled by user")
+        else:
+            bt.logging.info("👋 Unregistration cancelled by user")
         sys.exit(1)
     except Exception as e:
-        bt.logging.error(f"❌ Registration error: {e}")
+        if action == 'register':
+            bt.logging.error(f"❌ Registration error: {e}")
+        else:
+            bt.logging.error(f"❌ Unregistration error: {e}")
         sys.exit(1)
 
 

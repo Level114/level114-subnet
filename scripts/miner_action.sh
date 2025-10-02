@@ -1,45 +1,61 @@
 #!/bin/bash
 
-# Level114 Subnet Miner Registration Script
-# 
-# This script registers your Minecraft server with the Level114 subnet
-# by connecting to the collector-center-main service. The miner will register
-# your server and make it available for validator evaluation.
-
 set -e
+
+ACTION_RAW="$1"
+if [[ -z "$ACTION_RAW" ]]; then
+    echo "Usage: miner_action.sh <register|unregister> [OPTIONS]"
+    exit 1
+fi
+
+shift
+ACTION="${ACTION_RAW,,}"
+if [[ "$ACTION" != "register" && "$ACTION" != "unregister" ]]; then
+    echo "Unknown action: $ACTION_RAW"
+    echo "Expected 'register' or 'unregister'"
+    exit 1
+fi
+
+CALLER_NAME="${MINER_CALLER_NAME:-$(basename "$0")}"  # Show friendly name in help/output
 
 # Default values
 WALLET_NAME=""
 WALLET_HOTKEY=""
-# Hardcoded collector URL per request
 COLLECTOR_URL="https://collector.level114.io"
-MINECRAFT_IP=""
 MINECRAFT_HOSTNAME=""
 MINECRAFT_PORT=25565
 INTERACTIVE_MODE=true
 
-# Check for help or show usage
-if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
-    echo "🎮 Level114 Subnet Miner Registration"
+ACTION_TITLE="${ACTION^}"
+
+show_help() {
+    echo "🎮 Level114 Subnet Miner ${ACTION_TITLE}"
     echo ""
-    echo "This tool registers your Minecraft server with the Level114 subnet"
-    echo "by connecting to the collector-center-main service."
+    if [[ "$ACTION" == "register" ]]; then
+        echo "This tool registers your Minecraft server with the Level114 subnet"
+        echo "by connecting to the collector-center-main service."
+    else
+        echo "This tool unregisters your Minecraft server from the Level114 subnet"
+        echo "by notifying the collector-center-main service."
+    fi
     echo ""
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $CALLER_NAME [OPTIONS]"
     echo ""
     echo "Options:"
     echo "  -h, --help                      Show this help message"
     echo "  --non-interactive               Run in non-interactive mode with all parameters"
     echo ""
     echo "In non-interactive mode, you can use:"
-    echo "  --minecraft_ip IP               Minecraft server IP (required)"
     echo "  --minecraft_hostname HOST       Minecraft server hostname (e.g., play.myserver.com)"
     echo "  --minecraft_port PORT           Minecraft server port (default: 25565)"
     echo "  --wallet.name NAME              Your Bittensor wallet name"
     echo "  --wallet.hotkey HOTKEY          Your Bittensor wallet hotkey"
     echo ""
-    echo "Note: Collector URL is fixed to $COLLECTOR_URL"
-    echo ""
+}
+
+# Early help check (without consuming action argument)
+if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    show_help
     exit 0
 fi
 
@@ -49,10 +65,6 @@ while [[ $# -gt 0 ]]; do
         --non-interactive)
             INTERACTIVE_MODE=false
             shift
-            ;;
-        --minecraft_ip)
-            MINECRAFT_IP="$2"
-            shift 2
             ;;
         --minecraft_hostname)
             MINECRAFT_HOSTNAME="$2"
@@ -70,6 +82,10 @@ while [[ $# -gt 0 ]]; do
             WALLET_HOTKEY="$2"
             shift 2
             ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
         *)
             echo "Unknown option: $1"
             echo "Use -h or --help for usage information"
@@ -78,39 +94,37 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Interactive mode - ask user for input
 if [[ "$INTERACTIVE_MODE" == "true" ]]; then
-    echo "🎮 Level114 Subnet Miner Registration - Interactive Mode"
+    echo "🎮 Level114 Subnet Miner ${ACTION_TITLE} - Interactive Mode"
     echo ""
-    echo "I will register your Minecraft server with the Level114 subnet"
-    echo "through the collector-center-main service."
+    if [[ "$ACTION" == "register" ]]; then
+        echo "I will register your Minecraft server with the Level114 subnet"
+        echo "through the collector-center-main service."
+    else
+        echo "I will unregister your Minecraft server from the Level114 subnet"
+        echo "by notifying the collector-center-main service."
+    fi
     echo ""
-    
-    # Get Minecraft server information
+
     echo "🎮 Minecraft Server Information:"
-    read -p "Minecraft server IP: " MINECRAFT_IP
     read -p "Minecraft server hostname (e.g., play.myserver.com): " MINECRAFT_HOSTNAME
     read -p "Minecraft server port (default 25565): " input_mc_port
     if [[ -n "$input_mc_port" ]]; then
         MINECRAFT_PORT="$input_mc_port"
     fi
     echo ""
-    
-    # Get wallet information
+
     echo "🔑 Bittensor Wallet Information:"
     read -p "Wallet name: " WALLET_NAME
     read -p "Hotkey name: " WALLET_HOTKEY
     echo ""
 fi
 
-# Validate required parameters
-if [[ -z "$MINECRAFT_IP" ]]; then
-    echo "❌ Error: Minecraft server IP is required"
-    echo "Please enter the Minecraft server IP"
+if [[ -z "$MINECRAFT_HOSTNAME" ]]; then
+    echo "❌ Error: Minecraft server hostname is required"
+    echo "Please enter the Minecraft server hostname"
     exit 1
 fi
-
-# Hostname is optional
 
 if [[ -z "$WALLET_NAME" ]]; then
     echo "❌ Error: Wallet name is required"
@@ -124,16 +138,12 @@ if [[ -z "$WALLET_HOTKEY" ]]; then
     exit 1
 fi
 
-# Collector URL already set (hardcoded)
-
-# Resolve project root directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Check if we can find the project structure
 if [[ ! -f "${PROJECT_ROOT}/neurons/miner.py" ]]; then
     echo "❌ Error: Cannot find Level114 subnet project structure"
-    echo "Script location: $SCRIPT_DIR"  
+    echo "Script location: $SCRIPT_DIR"
     echo "Project root: $PROJECT_ROOT"
     echo "Expected file: ${PROJECT_ROOT}/neurons/miner.py"
     echo ""
@@ -141,10 +151,8 @@ if [[ ! -f "${PROJECT_ROOT}/neurons/miner.py" ]]; then
     exit 1
 fi
 
-# Change to project root for execution
 cd "$PROJECT_ROOT"
 
-# Check for Python command
 PYTHON_CMD=""
 if command -v python3 &> /dev/null; then
     PYTHON_CMD="python3"
@@ -158,7 +166,6 @@ fi
 
 echo "✅ Using Python command: $PYTHON_CMD"
 
-# Check if virtual environment is activated
 if [[ -z "${VIRTUAL_ENV}" ]]; then
     echo "⚠️  Warning: No virtual environment detected. Consider activating a virtual environment first."
     read -p "Continue anyway? (y/N): " -n 1 -r
@@ -168,47 +175,50 @@ if [[ -z "${VIRTUAL_ENV}" ]]; then
     fi
 fi
 
-echo "🎮 Registering Minecraft Server with Level114 Subnet..."
+if [[ "$ACTION" == "register" ]]; then
+    echo "🎮 Registering Minecraft Server with Level114 Subnet..."
+else
+    echo "🎮 Unregistering Minecraft Server from Level114 Subnet..."
+fi
 echo ""
 echo "📋 Configuration:"
 echo "  - Bittensor Wallet: $WALLET_NAME.$WALLET_HOTKEY"
 echo "  - Collector-Center: $COLLECTOR_URL"
-if [[ -n "$MINECRAFT_HOSTNAME" ]]; then
-    echo "  - Minecraft Server: $MINECRAFT_HOSTNAME ($MINECRAFT_IP):$MINECRAFT_PORT"
+echo "  - Minecraft Server: $MINECRAFT_HOSTNAME:$MINECRAFT_PORT"
+echo ""
+
+if [[ "$ACTION" == "register" ]]; then
+    echo "🔄 What the registration will do:"
+    echo "  1. Connect your Minecraft server to the Level114 subnet"
+    echo "  2. Register server details with collector-center-main"
+    echo "  3. Make your server available for validator evaluation"
+    echo "  4. Enable earning TAO rewards based on server performance"
 else
-    echo "  - Minecraft Server: $MINECRAFT_IP:$MINECRAFT_PORT"
+    echo "🔄 What the unregistration will do:"
+    echo "  1. Notify collector-center-main to unregister your server"
+    echo "  2. Remove server details from validator evaluation"
+    echo "  3. Stop new scoring cycles for your server"
+    echo "  4. Prevent further TAO rewards from this server"
 fi
-echo ""
-echo "🔄 What the registration will do:"
-echo "  1. Connect your Minecraft server to the Level114 subnet"
-echo "  2. Register server details with collector-center-main"
-echo "  3. Make your server available for validator evaluation"
-echo "  4. Enable earning TAO rewards based on server performance"
-echo ""
-echo "📊 Your server will be scored on:"
-echo "  • Infrastructure (40%): TPS performance, latency, memory usage"
-echo "  • Participation (35%): Plugin compliance, player activity"  
-echo "  • Reliability (25%): Uptime stability, consistency"
 echo ""
 echo "================================================================"
 echo ""
 
-# Set Python path to include project root
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
-# Build minecraft arguments - always IP, hostname if provided
-MINECRAFT_ARGS="--minecraft_ip $MINECRAFT_IP"
-if [[ -n "$MINECRAFT_HOSTNAME" ]]; then
-    MINECRAFT_ARGS="$MINECRAFT_ARGS --minecraft_hostname $MINECRAFT_HOSTNAME"
-fi
+MINECRAFT_ARGS=(--minecraft_hostname "$MINECRAFT_HOSTNAME")
 if [[ "$MINECRAFT_PORT" != "25565" ]]; then
-    MINECRAFT_ARGS="$MINECRAFT_ARGS --minecraft_port $MINECRAFT_PORT"
+    MINECRAFT_ARGS+=(--minecraft_port "$MINECRAFT_PORT")
 fi
 
-# Register minecraft server
-$PYTHON_CMD neurons/miner.py \
-    --wallet.name "$WALLET_NAME" \
-    --wallet.hotkey "$WALLET_HOTKEY" \
-    --collector_url "$COLLECTOR_URL" \
-    $MINECRAFT_ARGS \
-    --logging.debug
+PYTHON_ARGS=(
+    neurons/miner.py
+    --wallet.name "$WALLET_NAME"
+    --wallet.hotkey "$WALLET_HOTKEY"
+    --action "$ACTION"
+)
+
+PYTHON_ARGS+=("${MINECRAFT_ARGS[@]}")
+PYTHON_ARGS+=(--logging.debug)
+
+$PYTHON_CMD "${PYTHON_ARGS[@]}"
