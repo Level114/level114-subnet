@@ -128,6 +128,16 @@ python neurons/miner.py \
 2. Notifies collector-center-main to remove the server from active evaluation
 3. Stops new validator scoring cycles for that server
 
+**Minecraft Server Rules:**
+
+- The server must be publicly available.
+- The server must have the required Level114 plugins installed.
+- If a hostname is set, it must match the IP.
+- Do not remove OP status for the SN114 user.
+
+Multiple violations of the above rules may result in a permanent blacklist of the coldkey.
+
+
 ### Running a Validator
 
 ```bash
