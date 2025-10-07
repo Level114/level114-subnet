@@ -181,60 +181,6 @@ class BaseValidatorNeuron(BaseNeuron):
         """
         self.stop_run_thread()
 
-    def set_weights(self):
-        """
-        Sets the validator weights to the metagraph hotkeys based on the scores it has received from the miners. The weights determine the trust and incentive level the validator assigns to miner nodes on the network.
-        """
-
-        # Check if self.scores contains any NaN values and log a warning if it does.
-        if torch.isnan(self.scores).any():
-            bt.logging.warning(
-                f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
-            )
-
-        # Use raw scores as weights (no sum-normalization).
-        # Replace any NaN values with 0 and clamp negatives to 0.
-        raw_weights = torch.nan_to_num(self.scores, nan=0.0)
-        raw_weights = torch.clamp(raw_weights, min=0.0)
-
-        bt.logging.debug("raw_weights", raw_weights)
-        bt.logging.debug("raw_weight_uids", self.metagraph.uids.tolist())
-        # Process the raw weights to final_weights via subtensor limitations.
-        (
-            processed_weight_uids,
-            processed_weights,
-        ) = process_weights_for_netuid(
-            uids=self.metagraph.uids,
-            weights=raw_weights,
-            netuid=self.config.netuid,
-            subtensor=self.subtensor,
-            metagraph=self.metagraph,
-        )
-        bt.logging.debug("processed_weights", processed_weights)
-        bt.logging.debug("processed_weight_uids", processed_weight_uids)
-
-        # Convert to uint16 weights and uids.
-        (
-            uint_uids,
-            uint_weights,
-        ) = convert_weights_and_uids_for_emit(
-            uids=processed_weight_uids, weights=processed_weights
-        )
-        bt.logging.debug("uint_weights", uint_weights)
-        bt.logging.debug("uint_uids", uint_uids)
-
-        # Set the weights on chain via our subtensor connection.
-        result, msg = self.subtensor.set_weights(
-            wallet=self.wallet,
-            netuid=self.config.netuid,
-            uids=uint_uids,
-            weights=uint_weights,
-            wait_for_finalization=False,
-        )
-        if result is True:
-            bt.logging.info("set_weights on chain successfully!")
-        else:
-            bt.logging.error("set_weights failed", msg)
 
     def resync_metagraph(self):
         """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
