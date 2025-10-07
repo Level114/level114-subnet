@@ -221,7 +221,10 @@ python scripts/score_preview.py --show-constants
 ### Programmatic Usage
 
 ```python
-from level114.validator.scoring import MinerContext, calculate_miner_score
+from level114.validator.mechanisms.minecraft.scorer import (
+    MinerContext,
+    calculate_miner_score,
+)
 from collections import deque
 
 # Create context

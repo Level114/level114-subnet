@@ -136,6 +136,29 @@ class CollectorCenterAPI:
         mapping: Dict[str, ValidatorServer] = {item.hotkey: item for item in items}
         return status, mapping
 
+    def get_server_mappings(
+        self, hotkeys: List[str], timeout_seconds: Optional[float] = None
+    ) -> Tuple[int, Dict[str, Dict[str, Any]]]:
+        """
+        Backward-compatible helper returning dictionaries expected by validator mechanisms.
+
+        Args:
+            hotkeys: Hotkeys to resolve.
+            timeout_seconds: Optional request timeout override.
+
+        Returns:
+            Tuple of (status_code, mapping) where mapping is {hotkey: {"server_id": str, ...}}
+        """
+        status, mapping = self.get_validator_server_ids_map(hotkeys, timeout_seconds)
+        result: Dict[str, Dict[str, Any]] = {}
+        for hotkey, validator_server in mapping.items():
+            result[hotkey] = {
+                "server_id": validator_server.id,
+                "hotkey": validator_server.hotkey,
+                "registered_at": validator_server.registered_at,
+            }
+        return status, result
+
     def get_server_metrics(self, server_id: str, timeout_seconds: Optional[float] = None) -> Tuple[int, Any]:
         if not server_id:
             return 400, None
@@ -159,7 +182,46 @@ class CollectorCenterAPI:
             bt.logging.error(f"collector metrics error server_id={server_id}: {e}")
             return 599, None
 
-    
+    def get_tcl_metrics(self, hotkey: str, timeout_seconds: Optional[float] = None) -> Tuple[int, Any]:
+        if not hotkey:
+            return 400, None
+        query = urlencode({"hotkey": hotkey})
+        url = f"{self.base_url}/validators/tcl/metrics?{query}"
+        headers = self.default_headers()
+        req = Request(url, headers=headers, method="GET")
+        timeout = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                status = resp.getcode()
+                body = resp.read().decode("utf-8", errors="ignore")
+                try:
+                    data = json.loads(body)
+                    if status < 200 or status >= 300:
+                        bt.logging.error(
+                            f"collector tcl metrics status={status} hotkey={hotkey} body={body}"
+                        )
+                    return status, data
+                except json.JSONDecodeError:
+                    if status < 200 or status >= 300:
+                        bt.logging.error(
+                            f"collector tcl metrics status={status} hotkey={hotkey} body={body}"
+                        )
+                    return status, None
+        except HTTPError as e:
+            if e.code == 404:
+                # bt.logging.debug(
+                #     f"collector tcl metrics missing for hotkey={hotkey} (404)"
+                # )
+                return e.code, None
+            bt.logging.error(
+                f"collector tcl metrics HTTP error hotkey={hotkey}: {e.code} {e.reason}"
+            )
+            return e.code, None
+        except Exception as e:  # noqa: BLE001
+            bt.logging.error(f"collector tcl metrics error hotkey={hotkey}: {e}")
+            return 599, None
+
+
 
     def get_server_reports(self, server_id: str, limit: Optional[int] = None, timeout_seconds: Optional[float] = None) -> Tuple[int, List[Dict[str, Any]]]:
         """

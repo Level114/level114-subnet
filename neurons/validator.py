@@ -22,6 +22,7 @@ from level114.utils.uids import sequential_select_untrusted
 
 from level114.base.validator import BaseValidatorNeuron
 from level114.validator.runner import Level114ValidatorRunner
+from level114.validator.mechanisms import MinecraftMechanism, TclMechanism
 
 MIN_VALIDATION_INTERVAL = 70  # seconds
 
@@ -54,6 +55,13 @@ class Validator(BaseValidatorNeuron):
             )
             
             bt.logging.success("✅ Level114 scoring system initialized successfully")
+            init_status = self.scoring_runner.get_status()
+            mechanisms = init_status.get('mechanisms', {}) or {}
+            mechanism_descriptions = ", ".join(
+                f"{mid}:{info.get('mechanism_name')}"
+                for mid, info in sorted(mechanisms.items())
+            ) or "none"
+            bt.logging.info(f"⚙️  Validator mechanisms: {mechanism_descriptions}")
             bt.logging.info(f"⚖️  Weight update interval: {getattr(self.config.validator, 'weight_update_interval', 300)}s")
             
         except Exception as e:
@@ -100,23 +108,36 @@ class Validator(BaseValidatorNeuron):
             
             # Run comprehensive scoring cycle
             cycle_stats = await self.scoring_runner.run_scoring_cycle()
-            
+            mechanisms = cycle_stats.get('mechanisms', {}) or {}
+            minecraft_stats = mechanisms.get(MinecraftMechanism.mechanism_id, {}) or {}
+            cursed_stats = mechanisms.get(TclMechanism.mechanism_id, {}) or {}
+            weights_map = cycle_stats.get('weights_updated', {}) or {}
+            minecraft_weights_updated = weights_map.get(MinecraftMechanism.mechanism_id)
+
             # Update last validation time
             self.last_validation_time = current_time
-            
+
             # Log detailed results
             bt.logging.info(
-                f"✅ Validation cycle complete: "
-                f"{cycle_stats['servers_processed']} servers processed, "
-                f"{cycle_stats['scores_updated']} scores updated, "
-                f"{cycle_stats['errors']} errors, "
-                f"weights updated: {cycle_stats['weights_updated']}, "
-                f"cycle time: {cycle_stats['total_time']:.1f}s"
+                (
+                    "✅ Validation cycle {cycle} complete | Minecraft servers: {mc_processed} processed, "
+                    "{mc_scores} scores (weights updated={weights_updated}) | TCL metrics: {tcl_hotkeys} hotkeys, "
+                    "{tcl_metrics} collected | errors={errors} | cycle time={duration:.1f}s"
+                ).format(
+                    cycle=cycle_stats.get('cycle_id'),
+                    mc_processed=minecraft_stats.get('servers_processed', 0),
+                    mc_scores=minecraft_stats.get('scores_updated', 0),
+                    weights_updated=minecraft_weights_updated,
+                    tcl_hotkeys=cursed_stats.get('hotkeys_processed', 0),
+                    tcl_metrics=cursed_stats.get('metrics_collected', 0),
+                    errors=cycle_stats.get('errors', 0),
+                    duration=cycle_stats.get('total_time', 0.0),
+                )
             )
-            
+
             # Update traditional scores for compatibility with base class
             # This ensures existing monitoring and state saving still works
-            if cycle_stats['scores_updated'] > 0:
+            if minecraft_stats.get('scores_updated', 0) > 0:
                 self._update_legacy_scores()
             
             # Status summary every 10 cycles
@@ -187,30 +208,69 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info("=" * 60)
             bt.logging.info("📊 LEVEL114 VALIDATOR STATUS SUMMARY")
             bt.logging.info("=" * 60)
-            bt.logging.info(f"🔄 Cycles completed: {status['cycle_count']}")
-            bt.logging.info(f"⚖️  Last weights update: {time.ctime(status['last_weights_update']) if status['last_weights_update'] else 'Never'}")
-            bt.logging.info(f"🗂️  Cached scores: {status['cached_scores']}")
-            bt.logging.info(f"📇 Cached mappings: {status['cached_mappings']}")
-            bt.logging.info(f"🔒 Replay protection: {'Active' if status['replay_protection_active'] else 'Inactive'}")
-            
+            mechanisms_status = status.get('mechanisms', {}) or {}
+            mechanism_overview = ", ".join(
+                f"{mid}:{info.get('mechanism_name')}"
+                for mid, info in sorted(mechanisms_status.items())
+            ) or 'n/a'
+            bt.logging.info(f"⚙️  Mechanisms active: {mechanism_overview}")
+            bt.logging.info(f"🔄 Global cycles completed: {status.get('cycle_count', 0)}")
+
+            for mid, info in sorted(mechanisms_status.items()):
+                bt.logging.info(
+                    f"   • Mechanism {mid} ({info.get('mechanism_name')}): cycles={info.get('cycle_count', 0)}"
+                )
+                if mid == MinecraftMechanism.mechanism_id:
+                    bt.logging.info(
+                        f"     ↳ Cached scores: {info.get('cached_scores')}, mappings: {info.get('cached_mappings')}"
+                    )
+                if mid == TclMechanism.mechanism_id:
+                    bt.logging.info(
+                        f"     ↳ Cached TCL metrics: {info.get('metrics_cached')}"
+                    )
+
+            last_weights_update = status.get('last_weights_update')
+            if last_weights_update:
+                readable = time.ctime(last_weights_update)
+            else:
+                readable = 'Never'
+            bt.logging.info(f"⚖️  Last weights update: {readable}")
+
+            cached_scores = status.get('cached_scores')
+            if cached_scores is not None:
+                bt.logging.info(f"🗂️  Cached scores: {cached_scores}")
+            metrics_cached = status.get('metrics_cached')
+            if metrics_cached is not None:
+                bt.logging.info(f"📊 Cached TCL metrics: {metrics_cached}")
+
+            cached_mappings = status.get('cached_mappings')
+            if cached_mappings is not None:
+                bt.logging.info(f"📇 Cached mappings: {cached_mappings}")
+
+            replay_active = status.get('replay_protection_active')
+            if replay_active is not None:
+                bt.logging.info(f"🔒 Replay protection: {'Active' if replay_active else 'Inactive'}")
+
             # Network info
             bt.logging.info(f"🌐 Network: {self.config.subtensor.network}")
-            bt.logging.info(f"🔢 Subnet: {status['config']['netuid']}")
+            config_snapshot = status.get('config', {}) or {}
+            bt.logging.info(f"🔢 Subnet: {config_snapshot.get('netuid', 'n/a')}")
             bt.logging.info(f"👥 Metagraph size: {self.metagraph.n}")
-            
+
             # Weight timing
-            weight_interval = status['config']['weight_update_interval'] 
+            weight_interval = config_snapshot.get('weight_update_interval')
             next_update = status.get('next_weight_update')
-            if not next_update:
-                next_update = status['last_weights_update'] + weight_interval if status['last_weights_update'] else time.time()
-            time_to_next = max(0, next_update - time.time())
-            bt.logging.info(f"⏰ Next weight update: {time_to_next:.0f}s")
-            bt.logging.info(
-                f"🔁 Weight retry interval: {status['config'].get('weight_retry_interval', 'n/a')}s"
-            )
-            
+            if next_update is None and last_weights_update and weight_interval:
+                next_update = last_weights_update + weight_interval
+            if next_update is not None:
+                time_to_next = max(0, next_update - time.time())
+                bt.logging.info(f"⏰ Next weight update: {time_to_next:.0f}s")
+            retry_interval = config_snapshot.get('weight_retry_interval')
+            if retry_interval is not None:
+                bt.logging.info(f"🔁 Weight retry interval: {retry_interval}s")
+
             bt.logging.info("=" * 60)
-            
+
         except Exception as e:
             bt.logging.error(f"Error logging validator status: {e}")
     

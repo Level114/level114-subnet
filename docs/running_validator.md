@@ -217,7 +217,7 @@ export LEVEL114_WALLET_HOTKEY="your_hotkey"
 
 ### Custom Scoring Parameters
 
-The validator uses these constants (from `level114/validator/scoring/constants.py`):
+The validator uses these constants (from `level114/validator/mechanisms/minecraft/constants.py`):
 
 ```python
 IDEAL_TPS = 20.0          # Target TPS for perfect score
