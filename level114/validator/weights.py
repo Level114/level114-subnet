@@ -98,8 +98,8 @@ def apply_weight_update(
         mechid=mechanism_id,
         uids=processed_uids,
         weights=processed_weights,
-        wait_for_inclusion=True,
-        wait_for_finalization=True,
+        # wait_for_inclusion=True,
+        # wait_for_finalization=True,
     )
 
     success = result
