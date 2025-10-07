@@ -155,7 +155,7 @@ The Level114 validator features an advanced scoring system that evaluates Minecr
     --collector.api_key vk_prod_your_api_key_here \
     --collector.timeout 30.0 \
     --collector.reports_limit 50 \
-    --validator.weight_update_interval 300 \
+    --validator.weight_update_interval 1200 \
     --validator.validation_interval 70 \
     --wallet.name production_wallet \
     --wallet.hotkey validator_hotkey \
@@ -172,7 +172,7 @@ python neurons/validator.py \
     --wallet.hotkey myhotkey \
     --collector.url http://collector.level114.io:3000 \
     --collector.api_key vk_your_api_key_here \
-    --validator.weight_update_interval 300 \
+    --validator.weight_update_interval 1200 \
     --validator.validation_interval 70
 ```
 
@@ -187,7 +187,7 @@ python neurons/validator.py \
 
 3. **Integrity Verification**: Validates report hashes, signatures, and prevents replay attacks
 
-4. **Automatic Weight Setting**: Converts scores to Bittensor weights and updates blockchain every 5 minutes
+4. **Automatic Weight Setting**: Converts scores to Bittensor weights and updates blockchain every 20 minutes
 
 5. **Collector-Centric**: Reads historical scoring context directly from the Collector Center API
 
@@ -198,7 +198,7 @@ python neurons/validator.py \
 
 ✅ Level114 scoring system initialized successfully
 🌐 Collector API: collector.level114.io
-⚖️  Weight update interval: 300s
+⚖️  Weight update interval: 1200s
 
 🔄 Starting Level114 validation cycle...
 📊 Analyzing server dd227594-... with 10 reports
@@ -236,7 +236,7 @@ python neurons/validator.py \
 - `--collector.reports_limit N` - Max reports per query (default: 25)
 
 #### Validator Scoring Settings
-- `--validator.weight_update_interval SEC` - Weight update frequency (default: 300 = 5 minutes)
+- `--validator.weight_update_interval SEC` - Weight update frequency (fixed at 1200 = 20 minutes; lower values are ignored)
 - `--validator.validation_interval SEC` - Validation cycle interval (default: 70 seconds, minimum enforced)
 
 ### Scoring System Overview:
@@ -405,7 +405,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
     --network local \
     --collector.url http://localhost:3000 \
     --collector.api_key vk_local_test_key \
-    --validator.weight_update_interval 60 \
+    --validator.weight_update_interval 1200 \
     --validator.validation_interval 70 \
     --wallet.name local_wallet \
     --wallet.hotkey local_hotkey
@@ -415,7 +415,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 ### Success Indicators:
 ✅ **Consistent validation cycles** with 0 errors  
-✅ **Regular weight updates** every 5 minutes  
+✅ **Regular weight updates** every 20 minutes  
 ✅ **Growing number of cached scores**  
 ✅ **Stable API connectivity** (200 status codes)  
 ✅ **Collector history** available for each active server  
@@ -431,12 +431,12 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 🌐 Network: finney
 🔢 Subnet: 114
 👥 Metagraph size: 50
-⏰ Next weight update: 245s
+⏰ Next weight update: 1200s
 ```
 
 ### Performance Expectations:
 - **Validation cycles**: 70-120 seconds each
-- **Weight updates**: Every 5 minutes (300s)
+- **Weight updates**: Every 20 minutes (1200s)
 - **API latency**: <500ms average
 - **Memory usage**: 200-500MB
 - **CPU usage**: 5-15% average
@@ -447,7 +447,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ```bash
 ./scripts/run_validator.sh \
     --validator.validation_interval 70 \
-    --validator.weight_update_interval 240 \
+    --validator.weight_update_interval 1200 \
     --collector.reports_limit 100 \
     --collector.timeout 30.0 \
     --log_level INFO
@@ -457,7 +457,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ```bash
 ./scripts/run_validator.sh \
     --validator.validation_interval 150 \
-    --validator.weight_update_interval 600 \
+    --validator.weight_update_interval 1200 \
     --collector.reports_limit 10 \
     --collector.timeout 10.0 \
     --log_level WARNING
@@ -467,7 +467,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ```bash
 ./scripts/run_validator.sh \
     --validator.validation_interval 120 \
-    --validator.weight_update_interval 300 \
+    --validator.weight_update_interval 1200 \
     --log_level DEBUG
 ```
 

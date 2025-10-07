@@ -41,7 +41,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
   --collector.api_key vk_prod_your_api_key_here \
   --collector.timeout 30.0 \
   --collector.reports_limit 50 \
-  --validator.weight_update_interval 300 \
+  --validator.weight_update_interval 1200 \
   --validator.validation_interval 70 \
   --log_level INFO
 ```
@@ -61,7 +61,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 - `--collector.reports_limit N` - Max reports per query (default: 25)
 
 ### Validator Scoring Settings
-- `--validator.weight_update_interval SEC` - Weight update frequency (default: 300 = 5 minutes)
+- `--validator.weight_update_interval SEC` - Weight update frequency (fixed at 1200 = 20 minutes; lower values are ignored)
 - `--validator.validation_interval SEC` - Validation cycle interval (default: 70 seconds, minimum enforced to avoid rate limits)
 
 ### Logging
@@ -103,7 +103,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 ```
 ✅ Level114 scoring system initialized successfully
 🌐 Collector API: collector.level114.io
-⚖️ Weight update interval: 300s
+⚖️ Weight update interval: 1200s
 ```
 
 **Successful Validation Cycles:**
@@ -196,12 +196,7 @@ pkill -f neurons/validator.py
 ./scripts/run_validator.sh [...]
 ```
 
-**Force immediate weight update:**
-```bash
-./scripts/run_validator.sh \
-  --validator.weight_update_interval 10 \
-  [... other args ...]
-```
+**Force immediate weight update:** Weight commits now run every 20 minutes per policy. Restart the validator to trigger the next scheduled update attempt if you need it sooner.
 
 ## 🔧 Advanced Configuration
 
@@ -231,13 +226,13 @@ REQUIRED_PLUGINS = {"Level114"}
 **Standard cadence (minimum allowed):**
 ```bash
 --validator.validation_interval 70     # Check every 70s
---validator.weight_update_interval 300 # Update weights every 5min
+--validator.weight_update_interval 1200 # Update weights every 20min
 ```
 
 **Conservative validation:**
 ```bash
 --validator.validation_interval 120    # Check every 2min
---validator.weight_update_interval 600 # Update weights every 10min
+--validator.weight_update_interval 1200 # Update weights every 20min
 ```
 
 ## 📞 Support
@@ -251,7 +246,7 @@ REQUIRED_PLUGINS = {"Level114"}
 A well-tuned validator should achieve:
 
 - **Validation cycles**: 70-120 seconds each
-- **Weight updates**: Every 5 minutes
+- **Weight updates**: Every 20 minutes
 - **API latency**: <500ms average
 - **Storage growth**: ~1MB per day
 - **Memory usage**: 200-500MB
@@ -262,7 +257,7 @@ A well-tuned validator should achieve:
 Your validator is working well when you see:
 
 ✅ Consistent validation cycles with 0 errors  
-✅ Regular weight updates every 5 minutes  
+✅ Regular weight updates every 20 minutes  
 ✅ Growing number of cached scores  
 ✅ Stable API connectivity  
 ✅ Collector history available for each active miner  

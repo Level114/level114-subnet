@@ -56,7 +56,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --collector.timeout SECONDS       Collector timeout (default: 10.0)"
       echo "  --collector.api_key KEY           Collector API key (required)"
       echo "  --collector.reports_limit N       Default reports limit (default: 25)"
-      echo "  --validator.weight_update_interval SEC  Weight update interval (default: 300)"
+      echo "  --validator.weight_update_interval SEC  Weight update interval (default/enforced: 1200)"
       echo "  --validator.validation_interval SEC     Validation cycle interval (default: 70, minimum enforced)"
       echo "  --log_level LEVEL                 Log level (default: INFO)"
       echo "  -h, --help                        Show this help"
