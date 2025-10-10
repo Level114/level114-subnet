@@ -21,7 +21,7 @@ COLLECTOR_TIMEOUT=10.0
 COLLECTOR_API_KEY=""
 COLLECTOR_REPORTS_LIMIT=25
 WEIGHT_UPDATE_INTERVAL=1200
-VALIDATION_INTERVAL=70
+VALIDATION_INTERVAL=1440
 
 # Collect extra/unknown args to forward to Python
 EXTRA_ARGS=()
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --collector.api_key KEY           Collector API key (required)"
       echo "  --collector.reports_limit N       Default reports limit (default: 25)"
       echo "  --validator.weight_update_interval SEC  Weight update interval (default: 300)"
-      echo "  --validator.validation_interval SEC     Validation cycle interval (default: 70, minimum enforced)"
+      echo "  --validator.validation_interval SEC     Validation cycle interval (default: 1440, minimum enforced)"
       echo "  --log_level LEVEL                 Log level (default: INFO)"
       echo "  -h, --help                        Show this help"
       exit 0

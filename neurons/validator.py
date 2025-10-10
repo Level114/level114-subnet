@@ -24,7 +24,7 @@ from level114.base.validator import BaseValidatorNeuron
 from level114.validator.runner import Level114ValidatorRunner
 from level114.validator.mechanisms import MinecraftMechanism, TclMechanism
 
-MIN_VALIDATION_INTERVAL = 70  # seconds
+MIN_VALIDATION_INTERVAL = 24 * 60  # seconds (24 minutes)
 
 
 class Validator(BaseValidatorNeuron):

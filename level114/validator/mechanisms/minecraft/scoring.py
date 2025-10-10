@@ -19,12 +19,84 @@ from level114.validator.mechanisms.minecraft.scorer import (
 from level114.validator.mechanisms.minecraft.types import ScoreCacheEntry
 
 
+def _assign_zero_score(
+    mechanism,
+    server_id: str,
+    *,
+    reason: str,
+    scanner_entry: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    zero_components = {
+        "infrastructure": 0.0,
+        "participation": 0.0,
+        "reliability": 0.0,
+    }
+    mechanism.score_cache[server_id] = ScoreCacheEntry(
+        score=0,
+        raw_score=0,
+        components=zero_components,
+        updated_at=time.time(),
+    )
+    result = {
+        "server_id": server_id,
+        "score": 0,
+        "raw_score": 0,
+        "components": zero_components,
+        "latency": 0.0,
+        "compliance": False,
+        "reports_count": 0,
+        "zero_reason": reason,
+    }
+    if scanner_entry is not None:
+        result["scanner"] = dict(scanner_entry)
+    return result
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value != value:  # NaN check
+            return None
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def score_server(
     mechanism,
     server_id: str,
     report_fetch_limit: int,
+    scanner_entry: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     try:
+        scanner_snapshot = dict(scanner_entry) if scanner_entry else None
+        if not scanner_snapshot:
+            bt.logging.warning(
+                f"[Minecraft] Scanner data missing for server {server_id}; assigning zero score"
+            )
+            return _assign_zero_score(
+                mechanism,
+                server_id,
+                reason="scanner_missing",
+                scanner_entry=scanner_snapshot,
+            )
+
+        if not scanner_snapshot.get("online", False):
+            bt.logging.warning(
+                f"[Minecraft] Scanner marked server {server_id} offline; assigning zero score"
+            )
+            return _assign_zero_score(
+                mechanism,
+                server_id,
+                reason="scanner_offline",
+                scanner_entry=scanner_snapshot,
+            )
+
         status, reports = mechanism.collector_api.get_server_reports(
             server_id,
             limit=report_fetch_limit,
@@ -56,6 +128,55 @@ def score_server(
             return _downgrade_outdated_reports(mechanism, server_id)
 
         latest_report = fresh_reports[0]
+        scanner_max_players = _safe_int(scanner_snapshot.get("max_players"))
+        scanner_players = _safe_int(scanner_snapshot.get("players"))
+        report_max_players = latest_report.payload.max_players
+        report_player_count = latest_report.payload.player_count
+
+        if (
+            scanner_max_players is not None
+            and isinstance(report_max_players, int)
+            and scanner_max_players != report_max_players
+        ):
+            bt.logging.warning(
+                (
+                    "[Minecraft] Max players mismatch for server {server_id} "
+                    "(scanner={scanner}, report={report}); score=0"
+                ).format(
+                    server_id=server_id,
+                    scanner=scanner_max_players,
+                    report=report_max_players,
+                )
+            )
+            return _assign_zero_score(
+                mechanism,
+                server_id,
+                reason="max_players_mismatch",
+                scanner_entry=scanner_snapshot,
+            )
+
+        if (
+            scanner_players is not None
+            and isinstance(report_player_count, int)
+            and report_player_count > scanner_players + 5
+        ):
+            bt.logging.warning(
+                (
+                    "[Minecraft] Player count mismatch for server {server_id} "
+                    "(scanner={scanner}, report={report}); score=0"
+                ).format(
+                    server_id=server_id,
+                    scanner=scanner_players,
+                    report=report_player_count,
+                )
+            )
+            return _assign_zero_score(
+                mechanism,
+                server_id,
+                reason="player_count_mismatch",
+                scanner_entry=scanner_snapshot,
+            )
+
         history = deque(reversed(fresh_reports), maxlen=MAX_REPORT_HISTORY)
 
         context = MinerContext(
@@ -82,7 +203,7 @@ def score_server(
                 f"using {len(history)} reports"
             )
 
-        return {
+        result = {
             "server_id": server_id,
             "score": smoothed_score,
             "raw_score": new_score,
@@ -90,7 +211,14 @@ def score_server(
             "latency": 0.0,
             "compliance": True,
             "reports_count": len(history),
+            "report_max_players": report_max_players,
+            "report_player_count": report_player_count,
         }
+        if scanner_snapshot is not None:
+            result["scanner"] = scanner_snapshot
+            if scanner_players is not None and isinstance(report_player_count, int):
+                result["scanner_delta_players"] = report_player_count - scanner_players
+        return result
 
     except Exception as exc:  # noqa: BLE001
         bt.logging.error(f"[Minecraft] Error scoring server {server_id}: {exc}")
@@ -105,27 +233,11 @@ def _handle_missing_reports(mechanism, server_id: str) -> Optional[Dict[str, Any
         bt.logging.warning(
             f"[Minecraft] Collector returned no reports for server {server_id}; downgrading score to 0",
         )
-        zero_components = {
-            "infrastructure": 0.0,
-            "participation": 0.0,
-            "reliability": 0.0,
-        }
-        zero_entry = ScoreCacheEntry(
-            score=0,
-            raw_score=0,
-            components=zero_components,
-            updated_at=time.time(),
+        return _assign_zero_score(
+            mechanism,
+            server_id,
+            reason="collector_no_reports",
         )
-        mechanism.score_cache[server_id] = zero_entry
-        return {
-            "server_id": server_id,
-            "score": 0,
-            "raw_score": 0,
-            "components": zero_components,
-            "latency": 0.0,
-            "compliance": False,
-            "reports_count": 0,
-        }
 
     bt.logging.debug(f"[Minecraft] No reports available for server {server_id}")
     return None
@@ -148,23 +260,8 @@ def _downgrade_outdated_reports(mechanism, server_id: str) -> Dict[str, Any]:
     bt.logging.warning(
         f"[Minecraft] Collector reports for server {server_id} are older than 6h; downgrading score to 0"
     )
-    zero_components = {
-        "infrastructure": 0.0,
-        "participation": 0.0,
-        "reliability": 0.0,
-    }
-    mechanism.score_cache[server_id] = ScoreCacheEntry(
-        score=0,
-        raw_score=0,
-        components=zero_components,
-        updated_at=time.time(),
+    return _assign_zero_score(
+        mechanism,
+        server_id,
+        reason="collector_reports_stale",
     )
-    return {
-        "server_id": server_id,
-        "score": 0,
-        "raw_score": 0,
-        "components": zero_components,
-        "latency": 0.0,
-        "compliance": False,
-        "reports_count": 0,
-    }

@@ -78,19 +78,6 @@ def apply_weight_update(
         state.next_update = max(now + retry_interval, state.last_attempt + retry_interval)
         return False
 
-    if (
-        state.last_uids is not None
-        and np.array_equal(processed_uids, state.last_uids)
-        and np.allclose(processed_weights, state.last_weights)
-    ):
-        bt.logging.debug(
-            f"[Weights][{mechanism_name}#{mechanism_id}] Unchanged since last commit; skipping update"
-        )
-        state.next_update = (
-            state.last_update + update_interval if state.last_update else now + update_interval
-        )
-        return False
-
     result = subtensor.set_weights(
         wallet=wallet,
         netuid=netuid,

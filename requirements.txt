@@ -12,3 +12,6 @@ numpy>=1.21.0
 
 # Logging
 loguru>=0.7.0
+
+# HTTP client for external scanners
+requests>=2.31.0
