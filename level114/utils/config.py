@@ -154,8 +154,8 @@ def add_validator_args(cls, parser):
     validator_group.add_argument(
         "--validator.weight_update_interval",
         type=int,
-        help="Interval in seconds between weight updates (default: 300 = 5 minutes)",
-        default=300,
+        help="Interval in seconds between weight updates (fixed at 1200 = 20 minutes; lower values are ignored)",
+        default=1200,
     )
 
     validator_group.add_argument(

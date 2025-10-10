@@ -69,6 +69,7 @@ def apply_weight_update(
         subtensor=subtensor,
         metagraph=metagraph,
         label=f"{mechanism_name}#{mechanism_id}",
+        mechid=mechanism_id,
     )
 
     if len(processed_weights) == 0 or np.sum(processed_weights) <= 0:
@@ -81,13 +82,22 @@ def apply_weight_update(
     result = subtensor.set_weights(
         wallet=wallet,
         netuid=netuid,
+        mechid=mechanism_id,
         uids=processed_uids,
         weights=processed_weights,
-        wait_for_inclusion=True,
-        wait_for_finalization=True,
+        # wait_for_inclusion=True,
+        # wait_for_finalization=True,
     )
 
-    if result:
+    success = result
+    message = None
+    if isinstance(result, tuple):
+        if len(result) >= 1:
+            success = result[0]
+        if len(result) >= 2:
+            message = result[1]
+
+    if success:
         state.last_update = time.time()
         state.next_update = state.last_update + update_interval
         state.last_uids = np.copy(processed_uids)
@@ -107,6 +117,7 @@ def apply_weight_update(
 
     bt.logging.error(
         f"❌ [Weights][{mechanism_name}#{mechanism_id}] Failed to set weights on blockchain"
+        + (f": {message}" if message else "")
     )
     state.next_update = max(now + retry_interval, state.last_attempt + retry_interval)
     return False

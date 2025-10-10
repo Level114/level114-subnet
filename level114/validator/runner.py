@@ -70,13 +70,15 @@ class Level114ValidatorRunner:
 
         self._global_cycle_count = 0
         validator_cfg = getattr(self.config, "validator", None)
-        self.weight_update_interval = max(
-            self._coerce_interval(
-                getattr(validator_cfg, "weight_update_interval", None) if validator_cfg else None,
-                300.0,
-            ),
-            10.0,
+        configured_update_interval = self._coerce_interval(
+            getattr(validator_cfg, "weight_update_interval", None) if validator_cfg else None,
+            1200.0,
         )
+        self.weight_update_interval = 20.0 * 60.0
+        if configured_update_interval != self.weight_update_interval:
+            bt.logging.info(
+                "Weight update interval overridden to 1200s (20 minutes) per policy"
+            )
         self.weight_retry_interval = max(
             self._coerce_interval(
                 getattr(validator_cfg, "weight_retry_interval", None) if validator_cfg else None,

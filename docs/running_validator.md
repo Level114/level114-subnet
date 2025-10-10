@@ -103,7 +103,7 @@ The Level114 validator uses an advanced scoring system that evaluates Minecraft 
 ```
 ✅ Level114 scoring system initialized successfully
 🌐 Collector API: collector.level114.io
-⚖️ Weight update interval: 300s
+⚖️ Weight update interval: 1200s
 ```
 
 **Successful Validation Cycles:**
@@ -196,12 +196,7 @@ pkill -f neurons/validator.py
 ./scripts/run_validator.sh [...]
 ```
 
-**Force immediate weight update:**
-```bash
-./scripts/run_validator.sh \
-  --validator.weight_update_interval 10 \
-  [... other args ...]
-```
+**Force immediate weight update:** Weight commits now run every 20 minutes per policy. Restart the validator to trigger the next scheduled update attempt if you need it sooner.
 
 ## 🔧 Advanced Configuration
 
@@ -262,7 +257,7 @@ A well-tuned validator should achieve:
 Your validator is working well when you see:
 
 ✅ Consistent validation cycles with 0 errors  
-✅ Regular weight updates every 5 minutes  
+✅ Regular weight updates every 20 minutes  
 ✅ Growing number of cached scores  
 ✅ Stable API connectivity  
 ✅ Collector history available for each active miner  

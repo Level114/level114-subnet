@@ -187,7 +187,7 @@ python neurons/validator.py \
 
 3. **Integrity Verification**: Validates report hashes, signatures, and prevents replay attacks
 
-4. **Automatic Weight Setting**: Converts scores to Bittensor weights and updates blockchain every 5 minutes
+4. **Automatic Weight Setting**: Converts scores to Bittensor weights and updates blockchain every 20 minutes
 
 5. **Collector-Centric**: Reads historical scoring context directly from the Collector Center API
 
@@ -198,7 +198,7 @@ python neurons/validator.py \
 
 ✅ Level114 scoring system initialized successfully
 🌐 Collector API: collector.level114.io
-⚖️  Weight update interval: 300s
+⚖️  Weight update interval: 1200s
 
 🔄 Starting Level114 validation cycle...
 📊 Analyzing server dd227594-... with 10 reports
@@ -415,7 +415,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 ### Success Indicators:
 ✅ **Consistent validation cycles** with 0 errors  
-✅ **Regular weight updates** every 5 minutes  
+✅ **Regular weight updates** every 20 minutes  
 ✅ **Growing number of cached scores**  
 ✅ **Stable API connectivity** (200 status codes)  
 ✅ **Collector history** available for each active server  
@@ -431,7 +431,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 🌐 Network: finney
 🔢 Subnet: 114
 👥 Metagraph size: 50
-⏰ Next weight update: 245s
+⏰ Next weight update: 1200s
 ```
 
 ### Performance Expectations:
