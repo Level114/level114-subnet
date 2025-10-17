@@ -30,7 +30,7 @@ class MinecraftMechanism(ValidatorMechanism):
 
         self.replay_protection = None
         self.score_cache: Dict[str, ScoreCacheEntry] = {}
-        self.hotkey_to_server_id: Dict[str, str] = {}
+        self.hotkey_to_server_ids: Dict[str, List[str]] = {}
         self.server_id_to_hotkey: Dict[str, str] = {}
         self.server_ids_last_fetch: float = 0.0
         self.server_ids_min_refresh_interval: float = 12.5
@@ -78,29 +78,68 @@ class MinecraftMechanism(ValidatorMechanism):
             "scoring_results": {},
             "mechanism_id": self.mechanism_id,
             "mechanism_name": self.mechanism_name,
+            "hotkeys_with_servers": 0,
         }
 
         try:
             bt.logging.info(f"🔄 [Minecraft] Starting scoring cycle {self.cycle_count}")
             active_hotkeys = list(self.metagraph.hotkeys)
             server_mappings = self._get_server_mappings(active_hotkeys)
-            stats["servers_found"] = len(server_mappings)
+            all_server_ids = sorted(
+                {
+                    server_id
+                    for ids in server_mappings.values()
+                    for server_id in ids
+                    if server_id
+                }
+            )
+            stats["hotkeys_with_servers"] = len(server_mappings)
+            stats["servers_found"] = len(all_server_ids)
 
-            if not server_mappings:
+            if not all_server_ids:
                 bt.logging.warning("[Minecraft] No server mappings found for active hotkeys")
                 return stats
 
-            stats["scanner"] = await self.scanner.refresh(list(server_mappings.values()))
+            stats["scanner"] = await self.scanner.refresh(all_server_ids)
 
             scoring_results: Dict[str, Dict[str, Any]] = {}
             pending_votes: List[Tuple[str, Dict[str, Any]]] = []
-            for hotkey, server_id in server_mappings.items():
-                result = await self._score_server(server_id)
-                if result:
-                    scoring_results[hotkey] = result
-                    stats["scores_updated"] += 1
+            for hotkey, server_ids in server_mappings.items():
+                per_hotkey_results: Dict[str, Dict[str, Any]] = {}
+                best_score = 0.0
+                best_server_id: Optional[str] = None
+                zero_triggered = False
+                zero_servers: List[str] = []
+                for server_id in server_ids:
+                    result = await self._score_server(server_id)
+                    stats["servers_processed"] += 1
+                    if not result:
+                        continue
+                    per_hotkey_results[server_id] = result
                     pending_votes.append((server_id, result))
-                stats["servers_processed"] += 1
+                    stats["scores_updated"] += 1
+                    try:
+                        score_value = float(result.get("score", 0) or 0.0)
+                    except (TypeError, ValueError):
+                        score_value = 0.0
+                    if score_value <= 0.0:
+                        zero_triggered = True
+                        zero_servers.append(server_id)
+                    if best_server_id is None or score_value > best_score:
+                        best_score = score_value
+                        best_server_id = server_id
+                if per_hotkey_results:
+                    aggregate_score = 0.0 if zero_triggered else best_score
+                    primary_server_id = (
+                        zero_servers[0] if zero_triggered and zero_servers else best_server_id
+                    )
+                    scoring_results[hotkey] = {
+                        "score": aggregate_score,
+                        "best_server_id": primary_server_id,
+                        "zero_enforced": zero_triggered,
+                        "zero_servers": zero_servers,
+                        "servers": per_hotkey_results,
+                    }
 
             stats["votes"] = await self.vote_client.submit_votes(pending_votes)
 
@@ -135,7 +174,7 @@ class MinecraftMechanism(ValidatorMechanism):
     def get_latest_scores(self) -> Dict[str, Dict[str, Any]]:
         return self.latest_scores
 
-    def _get_server_mappings(self, hotkeys: List[str]) -> Dict[str, str]:
+    def _get_server_mappings(self, hotkeys: List[str]) -> Dict[str, List[str]]:
         return fetch_server_mappings(self, hotkeys)
 
     async def _score_server(self, server_id: str) -> Optional[Dict[str, Any]]:
@@ -169,7 +208,8 @@ class MinecraftMechanism(ValidatorMechanism):
         status = super().get_status()
         status.update({
             "cached_scores": len(self.score_cache),
-            "cached_mappings": len(self.hotkey_to_server_id),
+            "hotkeys_cached": len(self.hotkey_to_server_ids),
+            "cached_mappings": sum(len(ids) for ids in self.hotkey_to_server_ids.values()),
             "latest_scores": len(self.latest_scores),
             "replay_protection_active": bool(self.replay_protection),
             "config": {"netuid": self.config.netuid},
@@ -185,7 +225,15 @@ class MinecraftMechanism(ValidatorMechanism):
         return status
 
     def get_server_id_for_hotkey(self, hotkey: str) -> Optional[str]:
-        return self.hotkey_to_server_id.get(hotkey)
+        best_entry = self.latest_scores.get(hotkey)
+        if isinstance(best_entry, dict):
+            best_server_id = best_entry.get("best_server_id")
+            if isinstance(best_server_id, str) and best_server_id:
+                return best_server_id
+        server_ids = self.hotkey_to_server_ids.get(hotkey)
+        if server_ids:
+            return server_ids[0]
+        return None
 
     def get_cached_score(self, server_id: str) -> Optional[ScoreCacheEntry]:
         return self.score_cache.get(server_id)

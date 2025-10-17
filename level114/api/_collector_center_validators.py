@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -80,7 +80,8 @@ class _ValidatorEndpointsMixin:
         chunk_size = max(1, (len(unique_hotkeys) + chunk_count - 1) // chunk_count)
         total_chunks = (len(unique_hotkeys) + chunk_size - 1) // chunk_size
 
-        aggregated: Dict[str, ValidatorServer] = {}
+        aggregated: List[ValidatorServer] = []
+        seen_pairs: Set[Tuple[str, str]] = set()
         first_error_status: Optional[int] = None
         any_success = False
 
@@ -100,30 +101,43 @@ class _ValidatorEndpointsMixin:
                 any_success = True
 
             for item in items:
-                if item.hotkey not in aggregated:
-                    aggregated[item.hotkey] = item
+                pair = (item.hotkey, item.id)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                aggregated.append(item)
 
         if aggregated or any_success:
-            return (first_error_status or 200), list(aggregated.values())
+            return (first_error_status or 200), aggregated
 
         return (first_error_status or 599), []
 
     def get_validator_server_ids_map(
         self, hotkeys: List[str], timeout_seconds: Optional[float] = None
-    ) -> Tuple[int, Dict[str, ValidatorServer]]:
+    ) -> Tuple[int, Dict[str, List[ValidatorServer]]]:
         status, items = self.get_validator_server_ids(hotkeys, timeout_seconds)
-        mapping: Dict[str, ValidatorServer] = {item.hotkey: item for item in items}
+        mapping: Dict[str, List[ValidatorServer]] = {}
+        for item in items:
+            mapping.setdefault(item.hotkey, []).append(item)
         return status, mapping
 
     def get_server_mappings(
         self, hotkeys: List[str], timeout_seconds: Optional[float] = None
-    ) -> Tuple[int, Dict[str, Dict[str, Any]]]:
+    ) -> Tuple[int, Dict[str, List[Dict[str, Any]]]]:
         status, mapping = self.get_validator_server_ids_map(hotkeys, timeout_seconds)
-        result: Dict[str, Dict[str, Any]] = {}
-        for hotkey, validator_server in mapping.items():
-            result[hotkey] = {
-                "server_id": validator_server.id,
-                "hotkey": validator_server.hotkey,
-                "registered_at": validator_server.registered_at,
-            }
+        result: Dict[str, List[Dict[str, Any]]] = {}
+        for hotkey, validator_servers in mapping.items():
+            if not isinstance(validator_servers, list):
+                continue
+            servers_payload: List[Dict[str, Any]] = []
+            for validator_server in validator_servers:
+                servers_payload.append(
+                    {
+                        "server_id": validator_server.id,
+                        "hotkey": validator_server.hotkey,
+                        "registered_at": validator_server.registered_at,
+                    }
+                )
+            if servers_payload:
+                result[hotkey] = servers_payload
         return status, result
