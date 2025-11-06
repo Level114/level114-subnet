@@ -83,6 +83,7 @@ class SystemInfo(BaseModel):
 class ActivePlayer(BaseModel):
     name: str = Field(default="Unknown")
     uuid: str = Field(default="00000000-0000-0000-0000-000000000000")
+    power: float = Field(default=0.0, ge=0.0)
 
     @validator("uuid")
     def validate_uuid(cls, value: str) -> str:  # noqa: D417
@@ -94,9 +95,15 @@ class ActivePlayer(BaseModel):
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ActivePlayer":
         if not data:
             return cls()
+        power_value = data.get("power", 0.0)
+        try:
+            power = float(power_value)
+        except (TypeError, ValueError):
+            power = 0.0
         return cls(
             name=str(data.get("name", "Unknown")),
             uuid=str(data.get("uuid", "00000000-0000-0000-0000-000000000000")),
+            power=max(power, 0.0),
         )
 
 

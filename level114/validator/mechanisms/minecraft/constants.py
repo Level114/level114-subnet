@@ -9,7 +9,6 @@ from typing import Dict, Set
 IDEAL_TPS = 20.0
 MIN_TPS_THRESHOLD = 5.0
 MAX_TPS_BONUS = 20.0
-MAX_UPTIME_BONUS_H = 72.0
 
 # Player activity
 MAX_PLAYERS_WEIGHT = 200
@@ -30,7 +29,7 @@ W_RELY = 0.25
 W_INFRA_TPS = 1.0
 W_PART_COMPLIANCE = 0.8571428571428571
 W_PART_PLAYERS = 0.14285714285714285
-W_RELY_UPTIME = 0.50
+W_RELY_PLAYER_POWER = 0.50
 W_RELY_STABILITY = 0.35
 W_RELY_RECOVERY = 0.15
 
@@ -64,6 +63,11 @@ MAX_PLAYERS_WEIGHT = int(os.getenv("LEVEL114_MAX_PLAYERS_WEIGHT", MAX_PLAYERS_WE
 W_INFRA = float(os.getenv("LEVEL114_W_INFRA", W_INFRA))
 W_PART = float(os.getenv("LEVEL114_W_PART", W_PART))
 W_RELY = float(os.getenv("LEVEL114_W_RELY", W_RELY))
+W_RELY_PLAYER_POWER = float(
+    os.getenv("LEVEL114_W_RELY_PLAYER_POWER", W_RELY_PLAYER_POWER)
+)
+W_RELY_STABILITY = float(os.getenv("LEVEL114_W_RELY_STABILITY", W_RELY_STABILITY))
+W_RELY_RECOVERY = float(os.getenv("LEVEL114_W_RELY_RECOVERY", W_RELY_RECOVERY))
 EMA_ALPHA = float(os.getenv("LEVEL114_EMA_ALPHA", EMA_ALPHA))
 MAX_SCORE = int(os.getenv("LEVEL114_MAX_SCORE", MAX_SCORE))
 DEBUG_SCORING = os.getenv("LEVEL114_DEBUG_SCORING", "false").lower() == "true"
@@ -82,7 +86,7 @@ def validate_constants() -> None:
     if abs(part_total - 1.0) > 0.001:
         raise ValueError(f"Participation weights must sum to 1.0, got {part_total}")
 
-    rely_total = W_RELY_UPTIME + W_RELY_STABILITY + W_RELY_RECOVERY
+    rely_total = W_RELY_PLAYER_POWER + W_RELY_STABILITY + W_RELY_RECOVERY
     if abs(rely_total - 1.0) > 0.001:
         raise ValueError(f"Reliability weights must sum to 1.0, got {rely_total}")
 
@@ -110,7 +114,6 @@ def get_constants_summary() -> Dict[str, object]:
     return {
         "performance_targets": {
             "ideal_tps": IDEAL_TPS,
-            "max_uptime_bonus_h": MAX_UPTIME_BONUS_H,
             "max_players_weight": MAX_PLAYERS_WEIGHT,
         },
         "weights": {"infrastructure": W_INFRA, "participation": W_PART, "reliability": W_RELY},
@@ -118,7 +121,7 @@ def get_constants_summary() -> Dict[str, object]:
             "infra": {"tps": W_INFRA_TPS},
             "part": {"compliance": W_PART_COMPLIANCE, "players": W_PART_PLAYERS},
             "rely": {
-                "uptime": W_RELY_UPTIME,
+                "player_power": W_RELY_PLAYER_POWER,
                 "stability": W_RELY_STABILITY,
                 "recovery": W_RELY_RECOVERY,
             },

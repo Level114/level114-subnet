@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import statistics
-from collections import deque
 from typing import Deque, List, Optional
 
 from level114.validator.mechanisms.minecraft.constants import (
@@ -11,42 +10,12 @@ from level114.validator.mechanisms.minecraft.constants import (
     MAX_RECOVERY_TIME_MINUTES,
     MAX_TPS_BONUS,
     MAX_TPS_COEFFICIENT_OF_VARIATION,
-    MAX_UPTIME_BONUS_H,
     MIN_TPS_THRESHOLD,
     RECOVERY_SAMPLE_COUNT,
     RECOVERY_TPS_THRESHOLD,
     TPS_STABILITY_WINDOW,
 )
 from level114.validator.mechanisms.minecraft.report_schema import ServerReport
-
-
-def calculate_uptime_score(history: Deque[ServerReport]) -> float:
-    try:
-        if len(history) < 2:
-            return 0.5
-        uptimes = [report.payload.system_info.uptime_ms for report in history]
-        timestamps = [report.client_timestamp_ms for report in history]
-        reset_penalty = 0.0
-        resets = 0
-        total = len(uptimes)
-        for idx in range(1, total):
-            if uptimes[idx] < uptimes[idx - 1]:
-                resets += 1
-                reset_penalty += ((total - idx) / total) * 0.3
-        current_hours = uptimes[-1] / 3_600_000
-        uptime_score = max(0.0, min(current_hours / MAX_UPTIME_BONUS_H, 1.0) - reset_penalty)
-        if resets == 0 and total >= 5:
-            growth = []
-            for idx in range(1, total):
-                time_diff = (timestamps[idx] - timestamps[idx - 1]) / 3_600_000
-                uptime_diff = (uptimes[idx] - uptimes[idx - 1]) / 3_600_000
-                if time_diff > 0:
-                    growth.append(uptime_diff / time_diff)
-            if growth and statistics.mean(growth) > 0.8:
-                uptime_score = min(1.0, uptime_score * 1.1)
-        return uptime_score
-    except Exception:  # noqa: BLE001
-        return 0.5
 
 
 def calculate_stability_score(history: Deque[ServerReport]) -> float:

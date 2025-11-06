@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import bittensor as bt
 
@@ -12,7 +12,12 @@ from level114.validator.mechanisms.minecraft._scanner_controller import Minecraf
 from level114.validator.mechanisms.minecraft._scanner_logger import _BTScannerLogger
 from level114.validator.mechanisms.minecraft._voting_client import VoteClient
 from level114.validator.mechanisms.minecraft.mappings import fetch_server_mappings
-from level114.validator.mechanisms.minecraft.scoring import score_server
+from level114.validator.mechanisms.minecraft.report_schema import ServerReport
+from level114.validator.mechanisms.minecraft.scoring import (
+    PlayerPowerAggregator,
+    filter_fresh_reports,
+    score_server,
+)
 from level114.validator.mechanisms.minecraft.types import ScoreCacheEntry
 
 
@@ -101,6 +106,13 @@ class MinecraftMechanism(ValidatorMechanism):
                 return stats
 
             stats["scanner"] = await self.scanner.refresh(all_server_ids)
+            (
+                parsed_reports_map,
+                player_power_scores,
+                player_power_totals,
+                missing_reports,
+            ) = self._prepare_reports_and_power(all_server_ids)
+            stats["player_power_servers"] = len(player_power_scores)
 
             scoring_results: Dict[str, Dict[str, Any]] = {}
             pending_votes: List[Tuple[str, Dict[str, Any]]] = []
@@ -111,7 +123,13 @@ class MinecraftMechanism(ValidatorMechanism):
                 zero_triggered = False
                 zero_servers: List[str] = []
                 for server_id in server_ids:
-                    result = await self._score_server(server_id)
+                    result = await self._score_server(
+                        server_id,
+                        parsed_reports=parsed_reports_map.get(server_id),
+                        player_power_score=player_power_scores.get(server_id, 0.0),
+                        player_power_total=player_power_totals.get(server_id),
+                        reports_missing=server_id in missing_reports,
+                    )
                     stats["servers_processed"] += 1
                     if not result:
                         continue
@@ -177,13 +195,68 @@ class MinecraftMechanism(ValidatorMechanism):
     def _get_server_mappings(self, hotkeys: List[str]) -> Dict[str, List[str]]:
         return fetch_server_mappings(self, hotkeys)
 
-    async def _score_server(self, server_id: str) -> Optional[Dict[str, Any]]:
+    async def _score_server(
+        self,
+        server_id: str,
+        *,
+        parsed_reports: Optional[List[ServerReport]] = None,
+        player_power_score: Optional[float] = None,
+        player_power_total: Optional[float] = None,
+        reports_missing: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         return score_server(
             mechanism=self,
             server_id=server_id,
             report_fetch_limit=self.report_fetch_limit,
             scanner_entry=self.scan_results.get(server_id),
+            parsed_reports=parsed_reports,
+            player_power_score=player_power_score,
+            player_power_total=player_power_total,
+            reports_missing=reports_missing,
         )
+
+    def _prepare_reports_and_power(
+        self,
+        server_ids: List[str],
+    ) -> Tuple[Dict[str, List[ServerReport]], Dict[str, float], Dict[str, float], Set[str]]:
+        parsed_reports: Dict[str, List[ServerReport]] = {}
+        aggregator = PlayerPowerAggregator()
+        missing_reports: Set[str] = set()
+
+        for server_id in server_ids:
+            parsed_list: List[ServerReport] = []
+            reports: Optional[List[Dict[str, Any]]] = None
+            try:
+                status, reports = self.collector_api.get_server_reports(
+                    server_id,
+                    limit=self.report_fetch_limit,
+                )
+                report_count = len(reports) if reports else 0
+                if status != 200:
+                    bt.logging.debug(
+                        f"[Minecraft] Collector returned status {status} for server {server_id}; reports={report_count}"
+                    )
+                for report_dict in reports or []:
+                    try:
+                        parsed_list.append(ServerReport.from_dict(report_dict))
+                    except Exception as parse_err:  # noqa: BLE001
+                        bt.logging.debug(
+                            f"[Minecraft] Failed to parse report for server {server_id}: {parse_err}"
+                        )
+            except Exception as exc:  # noqa: BLE001
+                bt.logging.error(f"[Minecraft] Error fetching reports for server {server_id}: {exc}")
+                reports = None
+            if not reports:
+                missing_reports.add(server_id)
+            parsed_reports[server_id] = parsed_list
+
+            if parsed_list:
+                fresh_reports = filter_fresh_reports(parsed_list)
+                if fresh_reports:
+                    aggregator.ingest(server_id, fresh_reports[0])
+
+        normalized_scores, raw_totals = aggregator.compute()
+        return parsed_reports, normalized_scores, raw_totals, missing_reports
 
     def _cleanup_old_data(self) -> None:
         try:

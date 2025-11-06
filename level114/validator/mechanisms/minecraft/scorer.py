@@ -17,9 +17,7 @@ from level114.validator.mechanisms.minecraft.constants import (
     MAX_SCORE,
     MAX_SCORE_CHANGE,
     MAX_TPS_BONUS,
-    MAX_UPTIME_BONUS_H,
     MIN_PLAYERS_FOR_BONUS,
-    MIN_REPORTS_FOR_RELIABILITY,
     MIN_SCORE,
     MIN_SCORE_CHANGE,
     MIN_TPS_THRESHOLD,
@@ -31,15 +29,14 @@ from level114.validator.mechanisms.minecraft.constants import (
     W_PART_COMPLIANCE,
     W_PART_PLAYERS,
     W_RELY,
+    W_RELY_PLAYER_POWER,
     W_RELY_RECOVERY,
     W_RELY_STABILITY,
-    W_RELY_UPTIME,
 )
 from level114.validator.mechanisms.minecraft.report_schema import ServerReport
 from level114.validator.mechanisms.minecraft.scorer_components import (
     calculate_recovery_score,
     calculate_stability_score,
-    calculate_uptime_score,
 )
 
 
@@ -109,25 +106,20 @@ def evaluate_participation(ctx: MinerContext) -> float:
         return 0.0
 
 
-def evaluate_reliability(ctx: MinerContext) -> float:
+def evaluate_reliability(ctx: MinerContext, player_power_score: float) -> float:
     try:
-        history = ctx.history
-        if len(history) < MIN_REPORTS_FOR_RELIABILITY:
-            uptime_hours = ctx.report.payload.system_info.uptime_hours
-            return min(uptime_hours / (MAX_UPTIME_BONUS_H / 2), 1.0) * 0.5
-
-        uptime_score = calculate_uptime_score(history)
-        stability_score = calculate_stability_score(history)
-        recovery_score = calculate_recovery_score(history)
+        power_clamped = max(0.0, min(1.0, player_power_score))
+        stability_score = calculate_stability_score(ctx.history)
+        recovery_score = calculate_recovery_score(ctx.history)
         reliability = (
-            W_RELY_UPTIME * uptime_score
+            W_RELY_PLAYER_POWER * power_clamped
             + W_RELY_STABILITY * stability_score
             + W_RELY_RECOVERY * recovery_score
         )
         if DEBUG_SCORING:
             print(
                 "Reliability:"
-                f" Uptime={uptime_score:.3f}, Stability={stability_score:.3f},"
+                f" PlayerPower={power_clamped:.3f}, Stability={stability_score:.3f},"
                 f" Recovery={recovery_score:.3f} -> {reliability:.3f}"
             )
         return max(0.0, min(1.0, reliability))
@@ -144,17 +136,18 @@ def normalize_score(raw_score: float) -> int:
     return max(MIN_SCORE, min(MAX_SCORE, normalized))
 
 
-def calculate_miner_score(ctx: MinerContext) -> Tuple[int, Dict[str, float]]:
+def calculate_miner_score(ctx: MinerContext, player_power_score: float = 0.0) -> Tuple[int, Dict[str, float]]:
     try:
         infra = evaluate_infrastructure(ctx)
         part = evaluate_participation(ctx)
-        rely = evaluate_reliability(ctx)
+        rely = evaluate_reliability(ctx, player_power_score)
         raw = W_INFRA * infra + W_PART * part + W_RELY * rely
         final_score = normalize_score(raw)
         components = {
             "infrastructure": infra,
             "participation": part,
             "reliability": rely,
+            "player_power": max(0.0, min(1.0, player_power_score)),
             "raw_combined": raw,
             "final_normalized": final_score,
         }

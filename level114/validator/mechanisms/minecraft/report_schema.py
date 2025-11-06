@@ -128,7 +128,10 @@ class ServerReport(BaseModel):
         payload_dict = self.payload.model_dump()
         return {
             "active_players": sorted(
-                [{"name": p.name, "uuid": p.uuid} for p in self.payload.active_players],
+                [
+                    {"name": p.name, "uuid": p.uuid, "power": p.power}
+                    for p in self.payload.active_players
+                ],
                 key=lambda item: item["uuid"],
             ),
             "max_players": payload_dict["max_players"],
