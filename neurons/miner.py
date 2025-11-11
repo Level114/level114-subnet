@@ -124,18 +124,36 @@ class MinecraftServerRegistration:
                     result = {}
 
                 if action == 'register':
-                    server_id = result.get('server', {}).get('id', 'unknown')
-                    api_token = result.get('credentials', {}).get('token', 'unknown')
-                    key_id = result.get('server', {}).get('key_id', 'unknown')
+                    server_data = result.get('server', {}) or {}
+                    credentials_data = result.get('credentials', {}) or {}
+
+                    server_id = server_data.get('id', 'unknown')
+                    api_token = credentials_data.get('token', 'unknown')
+                    key_id = server_data.get('key_id', 'unknown')
+                    store_token = (
+                        credentials_data.get('store_token')
+                        or server_data.get('store_token')
+                        or 'unknown'
+                    )
+                    resolved_hostname = minecraft_hostname or server_data.get('hostname')
+                    resolved_hostname = resolved_hostname or 'unknown'
 
                     bt.logging.success("✅ Minecraft server registered successfully!")
                     bt.logging.info(f"🎯 Server ID: {server_id}")
+                    bt.logging.info(f"🆔 Store Token: {store_token}")
                     bt.logging.info(f"🔑 API Token: {api_token[:20]}...")
-                    bt.logging.info(f"🧭 Minecraft Hostname: {minecraft_hostname}")
+                    bt.logging.info(f"🧭 Minecraft Hostname: {resolved_hostname}")
                     bt.logging.info(f"🚪 Minecraft Port: {minecraft_port}")
                     bt.logging.info(f"🔐 Hotkey: {self.wallet.hotkey.ss58_address}")
 
-                    self._save_credentials(server_id, api_token, key_id, minecraft_port, minecraft_hostname)
+                    self._save_credentials(
+                        server_id,
+                        api_token,
+                        key_id,
+                        minecraft_port,
+                        resolved_hostname,
+                        store_token,
+                    )
                 else:
                     bt.logging.success("✅ Minecraft server unregistered successfully!")
                     bt.logging.info(f"🧭 Minecraft Hostname: {minecraft_hostname}")
@@ -153,7 +171,15 @@ class MinecraftServerRegistration:
             bt.logging.error(f"❌ Error trying to {action_word} Minecraft server: {e}")
             return False
 
-    def _save_credentials(self, server_id: str, api_token: str, key_id: str, minecraft_port: int, minecraft_hostname: Optional[str] = None):
+    def _save_credentials(
+        self,
+        server_id: str,
+        api_token: str,
+        key_id: str,
+        minecraft_port: int,
+        minecraft_hostname: Optional[str] = None,
+        store_token: Optional[str] = None,
+    ):
         """Save server credentials to file"""
         try:
             import os
@@ -168,10 +194,15 @@ class MinecraftServerRegistration:
             # Create filename based on wallet and minecraft server
             wallet_name = getattr(self.config, 'wallet_name', 'unknown')
             hotkey_name = getattr(self.config, 'wallet_hotkey', 'unknown')
-            hostname_safe = minecraft_hostname or 'unknown'
-            hostname_safe = re.sub(r'[^A-Za-z0-9_\-]+', '_', hostname_safe)
+            hostname_value = (
+                minecraft_hostname
+                or getattr(self.config, 'minecraft_hostname', None)
+                or 'unknown'
+            )
+            hostname_safe = re.sub(r'[^A-Za-z0-9_\-]+', '_', hostname_value)
+            store_token_value = store_token or 'unknown'
             filename = f"{creds_dir}/minecraft_server_{wallet_name}_{hotkey_name}_{hostname_safe}.txt"
-            
+
             # Prepare credentials content
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             credentials_content = f"""# Level114 Minecraft Server Credentials
@@ -184,7 +215,8 @@ class MinecraftServerRegistration:
 Server ID: {server_id}
 API Token: {api_token}
 Key ID: {key_id}
-Minecraft Hostname: {minecraft_hostname or ''}
+Store Token: {store_token_value}
+Minecraft Hostname: {hostname_value}
 Minecraft Port: {minecraft_port}
 
 [Wallet Information]
@@ -213,7 +245,8 @@ Registration Time: {timestamp}
                 "server_id": server_id,
                 "api_token": api_token,
                 "key_id": key_id,
-                "minecraft_hostname": minecraft_hostname,
+                "store_token": store_token_value,
+                "minecraft_hostname": hostname_value,
                 "minecraft_port": minecraft_port,
                 "wallet_name": wallet_name,
                 "hotkey_name": hotkey_name,
