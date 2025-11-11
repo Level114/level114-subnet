@@ -17,21 +17,21 @@ OPTIMAL_PLAYER_RATIO_MIN = 0.2
 OPTIMAL_PLAYER_RATIO_MAX = 0.8
 
 # Plugins
-REQUIRED_PLUGINS: Set[str] = {"Level114", "LuckPerms"}
+REQUIRED_PLUGINS: Set[str] = {"Level114", "LuckPerms", "CraftingStore", "PlayerPoints" }
 BONUS_PLUGINS: Set[str] = {"ViaVersion", "ViaBackwards", "ViaRewind"}
 
 # Primary weights (sum to 1.0)
-W_INFRA = 0.40
-W_PART = 0.35
-W_RELY = 0.25
+W_INFRA = 0.20
+W_PART = 0.20
+W_RELY = 0.60
 
 # Sub-component weights
 W_INFRA_TPS = 1.0
 W_PART_COMPLIANCE = 0.8571428571428571
 W_PART_PLAYERS = 0.14285714285714285
-W_RELY_PLAYER_POWER = 0.50
-W_RELY_STABILITY = 0.35
-W_RELY_RECOVERY = 0.15
+W_RELY_PLAYER_POWER = 0.90
+W_RELY_STABILITY = 0.05
+W_RELY_RECOVERY = 0.05
 
 # Score range
 MIN_SCORE = 0
